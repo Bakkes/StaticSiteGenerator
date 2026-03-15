@@ -374,7 +374,7 @@ copy_dir_recursive :: proc(src_dir: string, dst_dir: string, copied: ^int, alloc
 	}
 
 	for entry in entries {
-		if strings.has_suffix(entry.name, ".md") || entry.name == "site.yaml" || entry.name == "style.css" {
+		if strings.has_prefix(entry.name, ".") || strings.has_suffix(entry.name, ".md") || entry.name == "site.yaml" || entry.name == "style.css" {
 			continue
 		}
 
