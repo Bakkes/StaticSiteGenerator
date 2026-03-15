@@ -93,7 +93,9 @@ render_page :: proc(
 	strings.write_string(b, "\n</main>\n<hr>\n")
 	strings.write_string(b, "<footer>\n")
 	if len(config.footer_tagline) > 0 {
-		write_html_escaped(b, config.footer_tagline)
+		tagline_inlines := parse_inlines(config.footer_tagline)
+		sn_counter := 0
+		render_inlines(b, tagline_inlines[:], nil, &sn_counter)
 		strings.write_string(b, "<br>")
 	}
 	first_link := true

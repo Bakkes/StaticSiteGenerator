@@ -95,6 +95,9 @@ Sidenote_Defs :: struct {
 }
 
 sidenote_defs_lookup :: proc(defs: ^Sidenote_Defs, label: string) -> []Inline {
+	if defs == nil {
+		return nil
+	}
 	for l, i in defs.labels {
 		if l == label {
 			return defs.inlines[i][:]
