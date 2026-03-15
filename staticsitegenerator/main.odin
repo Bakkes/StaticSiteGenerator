@@ -66,7 +66,7 @@ main :: proc() {
 	allocator := mem.dynamic_arena_allocator(&arena)
 	context.allocator = allocator
 
-	blog_dir := "blog"
+	blog_dir := "."
 	if len(os.args) > 1 {
 		blog_dir = os.args[1]
 	}
@@ -83,6 +83,19 @@ main :: proc() {
 	}
 	config.blog_dir = blog_dir
 	config.output_dir = "dist"
+
+	// If content_dir is set in site.yaml, resolve it relative to blog_dir
+	if len(config.content_dir) > 0 {
+		config.content_dir = strings.concatenate({blog_dir, "/", config.content_dir})
+	} else {
+		config.content_dir = blog_dir
+	}
+
+	// Load CSS from content_dir
+	css_content, css_ok := read_file(strings.concatenate({config.content_dir, "/style.css"}))
+	if css_ok {
+		config.css = css_content
+	}
 
 	// Clean and create output directories
 	os.remove_all(config.output_dir)
@@ -103,14 +116,14 @@ main :: proc() {
 	})
 
 	// Load and parse pages
-	home_source, home_ok := read_file(strings.concatenate({config.blog_dir, "/home.md"}))
+	home_source, home_ok := read_file(strings.concatenate({config.content_dir, "/home.md"}))
 	if !home_ok {
 		fmt.eprintln("Error: failed to read home.md")
 		return
 	}
 	home_html := render_html(parse_markdown(home_source))
 
-	about_source, about_ok := read_file(strings.concatenate({config.blog_dir, "/about.md"}))
+	about_source, about_ok := read_file(strings.concatenate({config.content_dir, "/about.md"}))
 	if !about_ok {
 		fmt.eprintln("Error: failed to read about.md")
 		return
@@ -216,7 +229,7 @@ main :: proc() {
 	}
 
 	// Copy static assets
-	static_copied := copy_static_assets(config.blog_dir, config.output_dir)
+	static_copied := copy_static_assets(config.content_dir, config.output_dir)
 	files_written += static_copied
 
 	build_ms := time.duration_milliseconds(time.since(build_start))
@@ -235,7 +248,7 @@ main :: proc() {
 
 load_articles :: proc(config: Site_Config, allocator := context.allocator) -> [dynamic]Article {
 	articles := make([dynamic]Article, allocator)
-	articles_dir := strings.concatenate({config.blog_dir, "/articles"}, allocator)
+	articles_dir := strings.concatenate({config.content_dir, "/articles"}, allocator)
 
 	entries, err := os.read_all_directory_by_path(articles_dir, allocator)
 	if err != nil {
@@ -283,7 +296,7 @@ load_articles :: proc(config: Site_Config, allocator := context.allocator) -> [d
 
 load_projects :: proc(config: Site_Config, allocator := context.allocator) -> [dynamic]Project {
 	projects := make([dynamic]Project, allocator)
-	projects_dir := strings.concatenate({config.blog_dir, "/projects"}, allocator)
+	projects_dir := strings.concatenate({config.content_dir, "/projects"}, allocator)
 
 	entries, err := os.read_all_directory_by_path(projects_dir, allocator)
 	if err != nil {

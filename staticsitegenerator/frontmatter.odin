@@ -129,6 +129,8 @@ load_site_config :: proc(path: string, allocator := context.allocator) -> (Site_
 			config.accent_color = value
 		case "accent_color_light":
 			config.accent_color_light = value
+		case "content_dir":
+			config.content_dir = value
 		case "footer_link":
 			pipe := strings.index_byte(value, '|')
 			if pipe >= 0 {
@@ -147,16 +149,6 @@ load_site_config :: proc(path: string, allocator := context.allocator) -> (Site_
 					append(&config.nav_items, Nav_Item{label = label, href = href})
 				}
 			}
-		}
-	}
-
-	// Load CSS from style.css in the same directory as site.yaml
-	dir_end := strings.last_index_byte(path, '/')
-	if dir_end >= 0 {
-		css_path := strings.concatenate({path[:dir_end], "/style.css"}, allocator)
-		css_content, css_ok := read_file(css_path, allocator)
-		if css_ok {
-			config.css = css_content
 		}
 	}
 

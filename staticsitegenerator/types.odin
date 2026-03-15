@@ -148,6 +148,7 @@ Nav_Item :: struct {
 
 Site_Config :: struct {
 	blog_dir:       string,
+	content_dir:    string,
 	output_dir:     string,
 	site_title:     string,
 	site_url:       string,
