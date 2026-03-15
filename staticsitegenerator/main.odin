@@ -104,13 +104,13 @@ main :: proc() {
 	ensure_dir(strings.concatenate({config.output_dir, "/projects"}))
 
 	// Load and parse articles
-	articles := load_articles(config)
+	articles := load_content(Article, config, "articles")
 	slice.sort_by(articles[:], proc(a, b: Article) -> bool {
 		return a.frontmatter.date > b.frontmatter.date
 	})
 
 	// Load and parse projects
-	projects := load_projects(config)
+	projects := load_content(Project, config, "projects")
 	slice.sort_by(projects[:], proc(a, b: Project) -> bool {
 		return a.frontmatter.priority > b.frontmatter.priority
 	})
@@ -259,17 +259,17 @@ main :: proc() {
 }
 
 // ---------------------------------------------------------------------------
-// Article Loading
+// Content Loading
 // ---------------------------------------------------------------------------
 
-load_articles :: proc(config: Site_Config, allocator := context.allocator) -> [dynamic]Article {
-	articles := make([dynamic]Article, allocator)
-	articles_dir := strings.concatenate({config.content_dir, "/articles"}, allocator)
+load_content :: proc($T: typeid, config: Site_Config, subdir: string, allocator := context.allocator) -> [dynamic]T {
+	items := make([dynamic]T, allocator)
+	dir := strings.concatenate({config.content_dir, "/", subdir}, allocator)
 
-	entries, err := os.read_all_directory_by_path(articles_dir, allocator)
+	entries, err := os.read_all_directory_by_path(dir, allocator)
 	if err != nil {
-		fmt.eprintfln("Error reading articles directory: %v", err)
-		return articles
+		fmt.eprintfln("Error reading %s directory: %v", subdir, err)
+		return items
 	}
 
 	for entry in entries {
@@ -294,7 +294,7 @@ load_articles :: proc(config: Site_Config, allocator := context.allocator) -> [d
 			continue
 		}
 
-		append(&articles, Article{
+		append(&items, T{
 			frontmatter = frontmatter,
 			slug        = slug,
 			source_path = entry.fullpath,
@@ -303,55 +303,7 @@ load_articles :: proc(config: Site_Config, allocator := context.allocator) -> [d
 		})
 	}
 
-	return articles
-}
-
-// ---------------------------------------------------------------------------
-// Project Loading
-// ---------------------------------------------------------------------------
-
-load_projects :: proc(config: Site_Config, allocator := context.allocator) -> [dynamic]Project {
-	projects := make([dynamic]Project, allocator)
-	projects_dir := strings.concatenate({config.content_dir, "/projects"}, allocator)
-
-	entries, err := os.read_all_directory_by_path(projects_dir, allocator)
-	if err != nil {
-		fmt.eprintfln("Error reading projects directory: %v", err)
-		return projects
-	}
-
-	for entry in entries {
-		if !strings.has_suffix(entry.name, ".md") {
-			continue
-		}
-
-		source, ok := read_file(entry.fullpath, allocator)
-		if !ok {
-			continue
-		}
-
-		fm_text, body := split_frontmatter(source, allocator)
-		frontmatter := parse_frontmatter(fm_text, allocator)
-		slug := strings.trim_suffix(entry.name, ".md")
-
-		doc := parse_markdown(body, allocator)
-		body_html := render_html(doc, allocator)
-		headings := extract_headings(doc, allocator)
-
-		if frontmatter.draft {
-			continue
-		}
-
-		append(&projects, Project{
-			frontmatter = frontmatter,
-			slug        = slug,
-			source_path = entry.fullpath,
-			body_html   = body_html,
-			headings    = headings,
-		})
-	}
-
-	return projects
+	return items
 }
 
 // ---------------------------------------------------------------------------
