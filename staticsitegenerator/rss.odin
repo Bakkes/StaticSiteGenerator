@@ -39,21 +39,14 @@ render_rss_feed :: proc(config: Site_Config, articles: []Article, projects: []Pr
 }
 
 write_rss_item :: proc(b: ^strings.Builder, config: Site_Config, item: Content_Item, section: string, allocator := context.allocator) {
+	item_url := strings.concatenate({config.site_url, "/", section, "/", item.slug, ".html"}, allocator)
 	strings.write_string(b, "<item>\n<title>")
 	write_html_escaped(b, item.frontmatter.title)
 	strings.write_string(b, "</title>\n<link>")
-	write_html_escaped(b, config.site_url)
-	strings.write_string(b, "/")
-	strings.write_string(b, section)
-	strings.write_string(b, "/")
-	strings.write_string(b, item.slug)
-	strings.write_string(b, ".html</link>\n<guid>")
-	write_html_escaped(b, config.site_url)
-	strings.write_string(b, "/")
-	strings.write_string(b, section)
-	strings.write_string(b, "/")
-	strings.write_string(b, item.slug)
-	strings.write_string(b, ".html</guid>\n<pubDate>")
+	write_html_escaped(b, item_url)
+	strings.write_string(b, "</link>\n<guid>")
+	write_html_escaped(b, item_url)
+	strings.write_string(b, "</guid>\n<pubDate>")
 	strings.write_string(b, format_rss_date(item.frontmatter.date, allocator))
 	strings.write_string(b, "</pubDate>\n<description>")
 	desc := item.frontmatter.description if len(item.frontmatter.description) > 0 else item.frontmatter.title

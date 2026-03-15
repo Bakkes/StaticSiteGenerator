@@ -67,7 +67,7 @@ ODIN_KEYWORDS := [?]string{
 	"bool", "byte", "int", "uint", "uintptr", "i8", "i16", "i32", "i64",
 	"i128", "u8", "u16", "u32", "u64", "u128", "f16", "f32", "f64",
 	"complex32", "complex64", "complex128", "string", "cstring", "rawptr",
-	"rune", "any", "typeid",
+	"rune", "any",
 	// built-in values
 	"true", "false", "nil",
 }

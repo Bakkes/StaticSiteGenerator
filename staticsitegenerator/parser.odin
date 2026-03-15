@@ -7,10 +7,7 @@ import "core:strings"
 // ---------------------------------------------------------------------------
 
 is_blank_line :: proc(line: string) -> bool {
-	s := scanner_make(line)
-	is_space :: proc(c: byte) -> bool { return c == ' ' || c == '\t' || c == '\r' }
-	scanner_capture_while(&s, is_space)
-	return scanner_at_end(&s)
+	return len(strings.trim_space(line)) == 0
 }
 
 is_hr_line :: proc(line: string) -> bool {
@@ -293,36 +290,26 @@ parse_markdown :: proc(source: string, allocator := context.allocator) -> Docume
 			continue
 		}
 
-		if _, ok := is_unordered_item(line); ok {
-			list := Unordered_List {
-				items = make([dynamic][dynamic]Inline, allocator),
-			}
-			for i < len(lines) {
-				content, item_ok := is_unordered_item(lines[i])
-				if !item_ok {
-					break
+		{
+			_, is_ul := is_unordered_item(line)
+			_, is_ol := is_ordered_item(line)
+			if is_ul || is_ol {
+				list := List {
+					ordered = is_ol,
+					items   = make([dynamic][dynamic]Inline, allocator),
 				}
-				append(&list.items, parse_inlines(content, allocator))
-				i += 1
-			}
-			append(&doc.blocks, Block(list))
-			continue
-		}
-
-		if _, ok := is_ordered_item(line); ok {
-			list := Ordered_List {
-				items = make([dynamic][dynamic]Inline, allocator),
-			}
-			for i < len(lines) {
-				content, item_ok := is_ordered_item(lines[i])
-				if !item_ok {
-					break
+				check := is_unordered_item if !is_ol else is_ordered_item
+				for i < len(lines) {
+					content, item_ok := check(lines[i])
+					if !item_ok {
+						break
+					}
+					append(&list.items, parse_inlines(content, allocator))
+					i += 1
 				}
-				append(&list.items, parse_inlines(content, allocator))
-				i += 1
+				append(&doc.blocks, Block(list))
+				continue
 			}
-			append(&doc.blocks, Block(list))
-			continue
 		}
 
 		if _, ok := is_blockquote_line(line); ok {

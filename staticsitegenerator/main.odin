@@ -49,8 +49,28 @@ write_file :: proc(path: string, content: string) -> bool {
 	return true
 }
 
+write_output :: proc(output_dir: string, path: string, content: string, count: ^int) {
+	full_path := strings.concatenate({output_dir, "/", path})
+	if write_file(full_path, content) {
+		count^ += 1
+	}
+}
+
 ensure_dir :: proc(path: string) {
 	os.make_directory_all(path)
+}
+
+filter_by_tag :: proc(items: []Content_Item, tag: string, allocator := context.allocator) -> [dynamic]Content_Item {
+	result := make([dynamic]Content_Item, allocator)
+	for item in items {
+		for t in item.frontmatter.tags {
+			if t == tag {
+				append(&result, item)
+				break
+			}
+		}
+	}
+	return result
 }
 
 // ---------------------------------------------------------------------------
@@ -98,7 +118,9 @@ main :: proc() {
 	}
 
 	// Clean and create output directories
-	os.remove_all(config.output_dir)
+	if err := os.remove_all(config.output_dir); err != nil {
+		fmt.eprintfln("Warning: failed to clean %s: %v", config.output_dir, err)
+	}
 	ensure_dir(config.output_dir)
 	ensure_dir(strings.concatenate({config.output_dir, "/articles"}))
 	ensure_dir(strings.concatenate({config.output_dir, "/projects"}))
@@ -133,48 +155,21 @@ main :: proc() {
 	// Generate and write output
 	files_written := 0
 
-	if write_file(
-		strings.concatenate({config.output_dir, "/index.html"}),
-		render_home_page(config, home_html, articles[:], projects[:]),
-	) {
-		files_written += 1
-	}
-
-	if write_file(
-		strings.concatenate({config.output_dir, "/articles.html"}),
-		render_articles_page(config, articles[:]),
-	) {
-		files_written += 1
-	}
-
-	if write_file(
-		strings.concatenate({config.output_dir, "/about.html"}),
-		render_about_page(config, about_html),
-	) {
-		files_written += 1
-	}
-
-	if write_file(
-		strings.concatenate({config.output_dir, "/projects.html"}),
-		render_projects_page(config, projects[:]),
-	) {
-		files_written += 1
-	}
+	write_output(config.output_dir, "index.html", render_home_page(config, home_html, articles[:], projects[:]), &files_written)
+	write_output(config.output_dir, "articles.html", render_listing_page(config, "Articles", "articles.html", articles[:], "articles"), &files_written)
+	write_output(config.output_dir, "projects.html", render_listing_page(config, "Projects", "projects.html", projects[:], "projects"), &files_written)
+	write_output(config.output_dir, "about.html", render_about_page(config, about_html), &files_written)
 
 	for &article, idx in articles {
-		prev: ^Article = &articles[idx - 1] if idx > 0 else nil
-		next: ^Article = &articles[idx + 1] if idx + 1 < len(articles) else nil
-		path := strings.concatenate({config.output_dir, "/articles/", article.slug, ".html"})
-		if write_file(path, render_article_page(config, article, prev, next, articles[:])) {
-			files_written += 1
-		}
+		prev: ^Content_Item = &articles[idx - 1] if idx > 0 else nil
+		next: ^Content_Item = &articles[idx + 1] if idx + 1 < len(articles) else nil
+		path := strings.concatenate({"articles/", article.slug, ".html"})
+		write_output(config.output_dir, path, render_content_page(config, article, "articles", prev, next, articles[:]), &files_written)
 	}
 
-	for project in projects {
-		path := strings.concatenate({config.output_dir, "/projects/", project.slug, ".html"})
-		if write_file(path, render_project_page(config, project)) {
-			files_written += 1
-		}
+	for &project in projects {
+		path := strings.concatenate({"projects/", project.slug, ".html"})
+		write_output(config.output_dir, path, render_content_page(config, project, "projects"), &files_written)
 	}
 
 	// Generate tag pages
@@ -185,29 +180,11 @@ main :: proc() {
 		// Build tag counts for the index page
 		tag_counts := make([dynamic]Tag_Count)
 		for tag in tags {
-			tag_articles := make([dynamic]Article)
-			tag_projects := make([dynamic]Project)
-			for article in articles {
-				for t in article.frontmatter.tags {
-					if t == tag {
-						append(&tag_articles, article)
-						break
-					}
-				}
-			}
-			for project in projects {
-				for t in project.frontmatter.tags {
-					if t == tag {
-						append(&tag_projects, project)
-						break
-					}
-				}
-			}
+			tag_articles := filter_by_tag(articles[:], tag)
+			tag_projects := filter_by_tag(projects[:], tag)
 			append(&tag_counts, Tag_Count{name = tag, count = len(tag_articles) + len(tag_projects)})
-			path := strings.concatenate({config.output_dir, "/tags/", slugify(tag), ".html"})
-			if write_file(path, render_tag_page(config, tag, tag_articles[:], tag_projects[:])) {
-				files_written += 1
-			}
+			tag_path := strings.concatenate({"tags/", slugify(tag), ".html"})
+			write_output(config.output_dir, tag_path, render_tag_page(config, tag, tag_articles[:], tag_projects[:]), &files_written)
 		}
 
 		// Sort by count descending
@@ -215,34 +192,12 @@ main :: proc() {
 			return a.count > b.count
 		})
 
-		if write_file(
-			strings.concatenate({config.output_dir, "/tags/index.html"}),
-			render_tags_index_page(config, tag_counts[:]),
-		) {
-			files_written += 1
-		}
+		write_output(config.output_dir, "tags/index.html", render_tags_index_page(config, tag_counts[:]), &files_written)
 	}
 
-	if write_file(
-		strings.concatenate({config.output_dir, "/feed.xml"}),
-		render_rss_feed(config, articles[:], projects[:]),
-	) {
-		files_written += 1
-	}
-
-	if write_file(
-		strings.concatenate({config.output_dir, "/sitemap.xml"}),
-		render_sitemap(config, articles[:], projects[:], tags[:]),
-	) {
-		files_written += 1
-	}
-
-	if write_file(
-		strings.concatenate({config.output_dir, "/404.html"}),
-		render_404_page(config),
-	) {
-		files_written += 1
-	}
+	write_output(config.output_dir, "feed.xml", render_rss_feed(config, articles[:], projects[:]), &files_written)
+	write_output(config.output_dir, "sitemap.xml", render_sitemap(config, articles[:], projects[:], tags[:]), &files_written)
+	write_output(config.output_dir, "404.html", render_404_page(config), &files_written)
 
 	// Copy static assets
 	static_copied := copy_static_assets(config.content_dir, config.output_dir)
@@ -310,19 +265,16 @@ load_content :: proc($T: typeid, config: Site_Config, subdir: string, allocator 
 // Tag Collection
 // ---------------------------------------------------------------------------
 
-collect_tags :: proc(articles: []Article, projects: []Project, allocator := context.allocator) -> [dynamic]string {
+collect_tags :: proc(articles: []Content_Item, projects: []Content_Item, allocator := context.allocator) -> [dynamic]string {
+	seen := make(map[string]bool, allocator = context.temp_allocator)
 	tags := make([dynamic]string, allocator)
-	for article in articles {
-		for tag in article.frontmatter.tags {
-			if !slice.contains(tags[:], tag) {
-				append(&tags, tag)
-			}
-		}
-	}
-	for project in projects {
-		for tag in project.frontmatter.tags {
-			if !slice.contains(tags[:], tag) {
-				append(&tags, tag)
+	for items in ([2][]Content_Item{articles, projects}) {
+		for item in items {
+			for tag in item.frontmatter.tags {
+				if !seen[tag] {
+					seen[tag] = true
+					append(&tags, tag)
+				}
 			}
 		}
 	}

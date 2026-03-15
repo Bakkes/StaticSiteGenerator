@@ -12,8 +12,7 @@ Block :: union {
 	Heading,
 	Paragraph,
 	Code_Block,
-	Unordered_List,
-	Ordered_List,
+	List,
 	Blockquote,
 	Horizontal_Rule,
 	Sidenote_Def,
@@ -33,12 +32,9 @@ Code_Block :: struct {
 	code:     string,
 }
 
-Unordered_List :: struct {
-	items: [dynamic][dynamic]Inline,
-}
-
-Ordered_List :: struct {
-	items: [dynamic][dynamic]Inline,
+List :: struct {
+	ordered: bool,
+	items:   [dynamic][dynamic]Inline,
 }
 
 Blockquote :: struct {

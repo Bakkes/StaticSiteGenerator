@@ -202,36 +202,36 @@ write_toc :: proc(b: ^strings.Builder, headings: []Heading_Info) {
 	strings.write_string(b, "</ul>\n</details>\n")
 }
 
-write_series_nav :: proc(b: ^strings.Builder, current: Article, all_articles: []Article) {
-	// Collect articles in the same series, sorted by series_part
-	series_articles := make([dynamic]Article, context.temp_allocator)
-	for article in all_articles {
-		if article.frontmatter.series == current.frontmatter.series {
-			append(&series_articles, article)
+write_series_nav :: proc(b: ^strings.Builder, current: Content_Item, all_items: []Content_Item) {
+	// Collect items in the same series, sorted by series_part
+	series_items := make([dynamic]Content_Item, context.temp_allocator)
+	for item in all_items {
+		if item.frontmatter.series == current.frontmatter.series {
+			append(&series_items, item)
 		}
 	}
-	if len(series_articles) < 2 {
+	if len(series_items) < 2 {
 		return
 	}
 
 	// Sort by series_part
-	slice.sort_by(series_articles[:], proc(a, b: Article) -> bool {
+	slice.sort_by(series_items[:], proc(a, b: Content_Item) -> bool {
 		return a.frontmatter.series_part < b.frontmatter.series_part
 	})
 
 	strings.write_string(b, "<nav class=\"series\">\n<strong>")
 	write_html_escaped(b, current.frontmatter.series)
 	strings.write_string(b, "</strong>\n<ol>\n")
-	for article in series_articles {
-		if article.slug == current.slug {
+	for item in series_items {
+		if item.slug == current.slug {
 			strings.write_string(b, "<li class=\"current\">")
-			write_html_escaped(b, article.frontmatter.title)
+			write_html_escaped(b, item.frontmatter.title)
 			strings.write_string(b, "</li>\n")
 		} else {
 			strings.write_string(b, "<li><a href=\"")
-			strings.write_string(b, article.slug)
+			strings.write_string(b, item.slug)
 			strings.write_string(b, ".html\">")
-			write_html_escaped(b, article.frontmatter.title)
+			write_html_escaped(b, item.frontmatter.title)
 			strings.write_string(b, "</a></li>\n")
 		}
 	}
@@ -315,57 +315,64 @@ render_home_page :: proc(config: Site_Config, home_html: string, articles: []Art
 }
 
 // ---------------------------------------------------------------------------
-// Articles Listing Page
+// Content Listing Page (Articles / Projects)
 // ---------------------------------------------------------------------------
 
-render_articles_page :: proc(config: Site_Config, articles: []Article, allocator := context.allocator) -> string {
+render_listing_page :: proc(config: Site_Config, title: string, nav_active: string, items: []Content_Item, section: string, allocator := context.allocator) -> string {
 	b := strings.builder_make(allocator)
 	content := strings.builder_make(allocator)
 
-	strings.write_string(&content, "<h1>Articles</h1>\n<ul class=\"article-list\">\n")
-	for article in articles {
-		write_content_list_item(&content, article, "articles/")
+	strings.write_string(&content, "<h1>")
+	write_html_escaped(&content, title)
+	strings.write_string(&content, "</h1>\n<ul class=\"article-list\">\n")
+	href_prefix := strings.concatenate({section, "/"}, allocator)
+	for item in items {
+		write_content_list_item(&content, item, href_prefix)
 	}
 	strings.write_string(&content, "</ul>\n")
 
-	render_page(&b, config, "Articles", "articles.html", "", strings.to_string(content), page_path = "articles.html")
+	page_path := strings.concatenate({nav_active}, allocator)
+	render_page(&b, config, title, nav_active, "", strings.to_string(content), page_path = page_path)
 	return strings.to_string(b)
 }
 
 // ---------------------------------------------------------------------------
-// Individual Article Page
+// Individual Content Page (Article / Project)
 // ---------------------------------------------------------------------------
 
-render_article_page :: proc(
+render_content_page :: proc(
 	config: Site_Config,
-	article: Article,
-	prev: ^Article,
-	next: ^Article,
-	all_articles: []Article = nil,
+	item: Content_Item,
+	section: string,
+	prev: ^Content_Item = nil,
+	next: ^Content_Item = nil,
+	all_items: []Content_Item = nil,
 	allocator := context.allocator,
 ) -> string {
 	b := strings.builder_make(allocator)
 	content := strings.builder_make(allocator)
 
-	// Article meta
+	nav_active := strings.concatenate({section, ".html"}, allocator)
+
+	// Content meta
 	strings.write_string(&content, "<div class=\"article-meta\">")
-	write_date(&content, article.frontmatter)
-	if len(article.frontmatter.author) > 0 {
+	write_date(&content, item.frontmatter)
+	if len(item.frontmatter.author) > 0 {
 		strings.write_string(&content, " &middot; ")
-		write_html_escaped(&content, article.frontmatter.author)
+		write_html_escaped(&content, item.frontmatter.author)
 	}
-	write_tags(&content, article.frontmatter.tags[:], "../")
+	write_tags(&content, item.frontmatter.tags[:], "../")
 	strings.write_string(&content, "</div>\n")
 
-	if article.frontmatter.toc {
-		write_toc(&content, article.headings[:])
+	if item.frontmatter.toc {
+		write_toc(&content, item.headings[:])
 	}
 
-	strings.write_string(&content, article.body_html)
+	strings.write_string(&content, item.body_html)
 
 	// Series navigation
-	if len(article.frontmatter.series) > 0 && all_articles != nil {
-		write_series_nav(&content, article, all_articles)
+	if len(item.frontmatter.series) > 0 && all_items != nil {
+		write_series_nav(&content, item, all_items)
 	}
 
 	// Prev / Next navigation
@@ -388,67 +395,16 @@ render_article_page :: proc(
 		strings.write_string(&content, "</nav>\n")
 	}
 
-	article_path := strings.concatenate({"articles/", article.slug, ".html"})
-	render_page(&b, config, article.frontmatter.title, "articles.html", "../", strings.to_string(content), article.frontmatter.description, article_path)
+	item_path := strings.concatenate({section, "/", item.slug, ".html"}, allocator)
+	render_page(&b, config, item.frontmatter.title, nav_active, "../", strings.to_string(content), item.frontmatter.description, item_path)
 	return strings.to_string(b)
 }
 
 // ---------------------------------------------------------------------------
-// Projects Listing Page
+// Tag Page
 // ---------------------------------------------------------------------------
 
-render_projects_page :: proc(config: Site_Config, projects: []Project, allocator := context.allocator) -> string {
-	b := strings.builder_make(allocator)
-	content := strings.builder_make(allocator)
-
-	strings.write_string(&content, "<h1>Projects</h1>\n<ul class=\"article-list\">\n")
-	for project in projects {
-		write_content_list_item(&content, project, "projects/")
-	}
-	strings.write_string(&content, "</ul>\n")
-
-	render_page(&b, config, "Projects", "projects.html", "", strings.to_string(content), page_path = "projects.html")
-	return strings.to_string(b)
-}
-
-// ---------------------------------------------------------------------------
-// Individual Project Page
-// ---------------------------------------------------------------------------
-
-render_project_page :: proc(
-	config: Site_Config,
-	project: Project,
-	allocator := context.allocator,
-) -> string {
-	b := strings.builder_make(allocator)
-	content := strings.builder_make(allocator)
-
-	// Project meta
-	strings.write_string(&content, "<div class=\"article-meta\">")
-	write_date(&content, project.frontmatter)
-	if len(project.frontmatter.author) > 0 {
-		strings.write_string(&content, " &middot; ")
-		write_html_escaped(&content, project.frontmatter.author)
-	}
-	write_tags(&content, project.frontmatter.tags[:], "../")
-	strings.write_string(&content, "</div>\n")
-
-	if project.frontmatter.toc {
-		write_toc(&content, project.headings[:])
-	}
-
-	strings.write_string(&content, project.body_html)
-
-	project_path := strings.concatenate({"projects/", project.slug, ".html"})
-	render_page(&b, config, project.frontmatter.title, "projects.html", "../", strings.to_string(content), project.frontmatter.description, project_path)
-	return strings.to_string(b)
-}
-
-// ---------------------------------------------------------------------------
-// About Page
-// ---------------------------------------------------------------------------
-
-render_tag_page :: proc(config: Site_Config, tag: string, articles: []Article, projects: []Project, allocator := context.allocator) -> string {
+render_tag_page :: proc(config: Site_Config, tag: string, articles: []Content_Item, projects: []Content_Item, allocator := context.allocator) -> string {
 	b := strings.builder_make(allocator)
 	content := strings.builder_make(allocator)
 

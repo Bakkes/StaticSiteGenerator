@@ -48,13 +48,8 @@ validate_dir :: proc(dir: string, root: string, ok: ^bool, allocator := context.
 		}
 
 		// Build relative display path: "articles/foo.html" instead of absolute
-		display_path: string
-		if idx := strings.last_index(entry.fullpath, root); idx >= 0 {
-			display_path = entry.fullpath[idx + len(root):]
-			display_path = strings.trim_left(display_path, "/")
-		} else {
-			display_path = entry.name
-		}
+		display_path := strings.trim_prefix(entry.fullpath, root)
+		display_path = strings.trim_left(display_path, "/")
 
 		gz_size := zlib_compressed_size(data, allocator) + GZIP_OVERHEAD
 

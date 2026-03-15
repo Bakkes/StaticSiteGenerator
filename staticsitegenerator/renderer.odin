@@ -91,33 +91,14 @@ extract_headings :: proc(doc: Document, allocator := context.allocator) -> [dyna
 	return headings
 }
 
-Sidenote_Defs :: struct {
-	labels:  [dynamic]string,
-	inlines: [dynamic][dynamic]Inline,
-}
-
-sidenote_defs_lookup :: proc(defs: ^Sidenote_Defs, label: string) -> []Inline {
-	if defs == nil {
-		return nil
-	}
-	for l, i in defs.labels {
-		if l == label {
-			return defs.inlines[i][:]
-		}
-	}
-	return nil
-}
+Sidenote_Defs :: map[string][dynamic]Inline
 
 render_html :: proc(doc: Document, allocator := context.allocator) -> string {
 	// Collect sidenote definitions
-	sn_defs := Sidenote_Defs {
-		labels  = make([dynamic]string, allocator),
-		inlines = make([dynamic][dynamic]Inline, allocator),
-	}
+	sn_defs := make(Sidenote_Defs, allocator = context.temp_allocator)
 	for block in doc.blocks {
 		if def, ok := block.(Sidenote_Def); ok {
-			append(&sn_defs.labels, def.label)
-			append(&sn_defs.inlines, def.inlines)
+			sn_defs[def.label] = def.inlines
 		}
 	}
 
@@ -139,9 +120,15 @@ render_blocks :: proc(b: ^strings.Builder, blocks: []Block, sn_defs: ^Sidenote_D
 				id = headings[h_counter^].id
 				h_counter^ += 1
 			}
-			fmt.sbprintf(b, `<h%d id="%s">`, v.level, id)
+			if len(id) > 0 {
+				fmt.sbprintf(b, `<h%d id="%s">`, v.level, id)
+			} else {
+				fmt.sbprintf(b, "<h%d>", v.level)
+			}
 			render_inlines(b, v.inlines[:], sn_defs, sn_counter)
-			fmt.sbprintf(b, ` <a href="#%s" class="anchor">#</a>`, id)
+			if len(id) > 0 {
+				fmt.sbprintf(b, ` <a href="#%s" class="anchor">#</a>`, id)
+			}
 			fmt.sbprintf(b, "</h%d>\n", v.level)
 		case Paragraph:
 			strings.write_string(b, "<p>")
@@ -157,22 +144,14 @@ render_blocks :: proc(b: ^strings.Builder, blocks: []Block, sn_defs: ^Sidenote_D
 			}
 			highlight_code(b, v.language, v.code)
 			strings.write_string(b, "</code></pre>\n")
-		case Unordered_List:
-			strings.write_string(b, "<ul>\n")
+		case List:
+			strings.write_string(b, "<ol>\n" if v.ordered else "<ul>\n")
 			for item in v.items {
 				strings.write_string(b, "<li>")
 				render_inlines(b, item[:], sn_defs, sn_counter)
 				strings.write_string(b, "</li>\n")
 			}
-			strings.write_string(b, "</ul>\n")
-		case Ordered_List:
-			strings.write_string(b, "<ol>\n")
-			for item in v.items {
-				strings.write_string(b, "<li>")
-				render_inlines(b, item[:], sn_defs, sn_counter)
-				strings.write_string(b, "</li>\n")
-			}
-			strings.write_string(b, "</ol>\n")
+			strings.write_string(b, "</ol>\n" if v.ordered else "</ul>\n")
 		case Blockquote:
 			strings.write_string(b, "<blockquote><p>")
 			render_inlines(b, v.inlines[:], sn_defs, sn_counter)
@@ -223,7 +202,12 @@ render_inlines :: proc(b: ^strings.Builder, inlines: []Inline, sn_defs: ^Sidenot
 		case Sidenote_Ref:
 			sn_counter^ += 1
 			n := sn_counter^
-			sn_inlines := sidenote_defs_lookup(sn_defs, v.label)
+			sn_inlines: []Inline
+			if sn_defs != nil {
+				if found, ok := sn_defs[v.label]; ok {
+					sn_inlines = found[:]
+				}
+			}
 			fmt.sbprintf(b, `<label for="sn-%d" class="sn-num">%d</label>`, n, n)
 			fmt.sbprintf(b, `<input type="checkbox" id="sn-%d" class="sn-check">`, n)
 			fmt.sbprintf(b, `<span class="sn"><span class="sn-num">%d</span> `, n)
