@@ -11,14 +11,14 @@ HOME_MAX_PROJECTS :: 5
 // HTML Page Shell
 // ---------------------------------------------------------------------------
 
-// Renders a complete HTML page. `prefix` is "" for root pages, "../" for articles/.
-render_page :: proc(
+// Writes the HTML page header up to and including <main>.
+// `prefix` is "" for root pages, "../" for articles/.
+render_page_header :: proc(
 	b: ^strings.Builder,
 	config: Site_Config,
 	title: string,
 	active_nav: string,
 	prefix: string,
-	content: string,
 	page_description: string = "",
 	page_path: string = "",
 ) {
@@ -93,13 +93,16 @@ render_page :: proc(
 	render_nav(b, config.nav_items[:], active_nav, prefix)
 	strings.write_string(b, "</header>\n<hr>\n")
 	strings.write_string(b, "<main>\n")
-	strings.write_string(b, content)
+}
+
+// Writes </main>, footer, and closing HTML tags.
+render_page_footer :: proc(b: ^strings.Builder, config: Site_Config, prefix: string) {
 	strings.write_string(b, "\n</main>\n<hr>\n")
 	strings.write_string(b, "<footer>\n")
 	if len(config.footer_tagline) > 0 {
 		tagline_inlines := parse_inlines(config.footer_tagline)
-		sn_counter := 0
-		render_inlines(b, tagline_inlines[:], nil, &sn_counter)
+		rs := Render_State{b = b}
+		render_inlines(&rs, tagline_inlines[:])
 		strings.write_string(b, "<br>")
 	}
 	first_link := true
@@ -152,10 +155,10 @@ write_date :: proc(b: ^strings.Builder, fm: Frontmatter) {
 		strings.write_string(b, `<abbr class="modified" title="Last updated `)
 		write_html_escaped(b, fm.modified)
 		strings.write_string(b, `">`)
-		strings.write_string(b, fm.date)
+		write_html_escaped(b, fm.date)
 		strings.write_string(b, `*</abbr>`)
 	} else {
-		strings.write_string(b, fm.date)
+		write_html_escaped(b, fm.date)
 	}
 }
 
@@ -268,7 +271,7 @@ write_description :: proc(b: ^strings.Builder, fm: Frontmatter) {
 
 write_content_list_item :: proc(b: ^strings.Builder, item: Content_Item, href_prefix: string, show_description := true) {
 	strings.write_string(b, "<li><span class=\"date\">")
-	strings.write_string(b, item.frontmatter.date)
+	write_html_escaped(b, item.frontmatter.date)
 	strings.write_string(b, "</span> <a href=\"")
 	strings.write_string(b, href_prefix)
 	strings.write_string(b, item.slug)
@@ -287,30 +290,30 @@ write_content_list_item :: proc(b: ^strings.Builder, item: Content_Item, href_pr
 
 render_home_page :: proc(config: Site_Config, home_html: string, articles: []Article, projects: []Project, allocator := context.allocator) -> string {
 	b := strings.builder_make(allocator)
-	content := strings.builder_make(allocator)
+	render_page_header(&b, config, "Home", "index.html", "", page_path = "index.html")
 
 	// Home content
-	strings.write_string(&content, home_html)
+	strings.write_string(&b, home_html)
 
 	// Recent articles
-	strings.write_string(&content, "\n<h2>Articles</h2>\n<ul class=\"article-list\">\n")
+	strings.write_string(&b, "\n<h2>Articles</h2>\n<ul class=\"article-list\">\n")
 	for article in articles[:min(len(articles), HOME_MAX_ARTICLES)] {
-		write_content_list_item(&content, article, "articles/")
+		write_content_list_item(&b, article, "articles/")
 	}
-	strings.write_string(&content, "</ul>\n")
-	strings.write_string(&content, "<p><a href=\"articles.html\">All articles &rarr;</a></p>\n")
+	strings.write_string(&b, "</ul>\n")
+	strings.write_string(&b, "<p><a href=\"articles.html\">All articles &rarr;</a></p>\n")
 
 	// Recent projects
 	if len(projects) > 0 {
-		strings.write_string(&content, "\n<h2>Projects</h2>\n<ul class=\"article-list\">\n")
+		strings.write_string(&b, "\n<h2>Projects</h2>\n<ul class=\"article-list\">\n")
 		for project in projects[:min(len(projects), HOME_MAX_PROJECTS)] {
-			write_content_list_item(&content, project, "projects/")
+			write_content_list_item(&b, project, "projects/")
 		}
-		strings.write_string(&content, "</ul>\n")
-		strings.write_string(&content, "<p><a href=\"projects.html\">All projects &rarr;</a></p>\n")
+		strings.write_string(&b, "</ul>\n")
+		strings.write_string(&b, "<p><a href=\"projects.html\">All projects &rarr;</a></p>\n")
 	}
 
-	render_page(&b, config, "Home", "index.html", "", strings.to_string(content), page_path = "index.html")
+	render_page_footer(&b, config, "")
 	return strings.to_string(b)
 }
 
@@ -320,19 +323,18 @@ render_home_page :: proc(config: Site_Config, home_html: string, articles: []Art
 
 render_listing_page :: proc(config: Site_Config, title: string, nav_active: string, items: []Content_Item, section: string, allocator := context.allocator) -> string {
 	b := strings.builder_make(allocator)
-	content := strings.builder_make(allocator)
+	render_page_header(&b, config, title, nav_active, "", page_path = nav_active)
 
-	strings.write_string(&content, "<h1>")
-	write_html_escaped(&content, title)
-	strings.write_string(&content, "</h1>\n<ul class=\"article-list\">\n")
+	strings.write_string(&b, "<h1>")
+	write_html_escaped(&b, title)
+	strings.write_string(&b, "</h1>\n<ul class=\"article-list\">\n")
 	href_prefix := strings.concatenate({section, "/"}, allocator)
 	for item in items {
-		write_content_list_item(&content, item, href_prefix)
+		write_content_list_item(&b, item, href_prefix)
 	}
-	strings.write_string(&content, "</ul>\n")
+	strings.write_string(&b, "</ul>\n")
 
-	page_path := strings.concatenate({nav_active}, allocator)
-	render_page(&b, config, title, nav_active, "", strings.to_string(content), page_path = page_path)
+	render_page_footer(&b, config, "")
 	return strings.to_string(b)
 }
 
@@ -344,59 +346,58 @@ render_content_page :: proc(
 	config: Site_Config,
 	item: Content_Item,
 	section: string,
-	prev: ^Content_Item = nil,
-	next: ^Content_Item = nil,
+	newer: ^Content_Item = nil,
+	older: ^Content_Item = nil,
 	all_items: []Content_Item = nil,
 	allocator := context.allocator,
 ) -> string {
 	b := strings.builder_make(allocator)
-	content := strings.builder_make(allocator)
-
 	nav_active := strings.concatenate({section, ".html"}, allocator)
+	item_path := strings.concatenate({section, "/", item.slug, ".html"}, allocator)
+	render_page_header(&b, config, item.frontmatter.title, nav_active, "../", item.frontmatter.description, item_path)
 
 	// Content meta
-	strings.write_string(&content, "<div class=\"article-meta\">")
-	write_date(&content, item.frontmatter)
+	strings.write_string(&b, "<div class=\"article-meta\">")
+	write_date(&b, item.frontmatter)
 	if len(item.frontmatter.author) > 0 {
-		strings.write_string(&content, " &middot; ")
-		write_html_escaped(&content, item.frontmatter.author)
+		strings.write_string(&b, " &middot; ")
+		write_html_escaped(&b, item.frontmatter.author)
 	}
-	write_tags(&content, item.frontmatter.tags[:], "../")
-	strings.write_string(&content, "</div>\n")
+	write_tags(&b, item.frontmatter.tags[:], "../")
+	strings.write_string(&b, "</div>\n")
 
 	if item.frontmatter.toc {
-		write_toc(&content, item.headings[:])
+		write_toc(&b, item.headings[:])
 	}
 
-	strings.write_string(&content, item.body_html)
+	strings.write_string(&b, item.body_html)
 
 	// Series navigation
 	if len(item.frontmatter.series) > 0 && all_items != nil {
-		write_series_nav(&content, item, all_items)
+		write_series_nav(&b, item, all_items)
 	}
 
-	// Prev / Next navigation
-	if prev != nil || next != nil {
-		strings.write_string(&content, "<nav class=\"article-nav\">\n")
-		if next != nil {
-			strings.write_string(&content, "<a class=\"article-nav-prev\" href=\"")
-			strings.write_string(&content, next.slug)
-			strings.write_string(&content, ".html\">&larr; ")
-			write_html_escaped(&content, next.frontmatter.title)
-			strings.write_string(&content, "</a>\n")
+	// Older / Newer navigation
+	if newer != nil || older != nil {
+		strings.write_string(&b, "<nav class=\"article-nav\">\n")
+		if older != nil {
+			strings.write_string(&b, "<a class=\"article-nav-prev\" href=\"")
+			strings.write_string(&b, older.slug)
+			strings.write_string(&b, ".html\">&larr; ")
+			write_html_escaped(&b, older.frontmatter.title)
+			strings.write_string(&b, "</a>\n")
 		}
-		if prev != nil {
-			strings.write_string(&content, "<a class=\"article-nav-next\" href=\"")
-			strings.write_string(&content, prev.slug)
-			strings.write_string(&content, ".html\">")
-			write_html_escaped(&content, prev.frontmatter.title)
-			strings.write_string(&content, " &rarr;</a>\n")
+		if newer != nil {
+			strings.write_string(&b, "<a class=\"article-nav-next\" href=\"")
+			strings.write_string(&b, newer.slug)
+			strings.write_string(&b, ".html\">")
+			write_html_escaped(&b, newer.frontmatter.title)
+			strings.write_string(&b, " &rarr;</a>\n")
 		}
-		strings.write_string(&content, "</nav>\n")
+		strings.write_string(&b, "</nav>\n")
 	}
 
-	item_path := strings.concatenate({section, "/", item.slug, ".html"}, allocator)
-	render_page(&b, config, item.frontmatter.title, nav_active, "../", strings.to_string(content), item.frontmatter.description, item_path)
+	render_page_footer(&b, config, "../")
 	return strings.to_string(b)
 }
 
@@ -406,48 +407,48 @@ render_content_page :: proc(
 
 render_tag_page :: proc(config: Site_Config, tag: string, articles: []Content_Item, projects: []Content_Item, allocator := context.allocator) -> string {
 	b := strings.builder_make(allocator)
-	content := strings.builder_make(allocator)
+	render_page_header(&b, config, tag, "articles.html", "../")
 
-	strings.write_string(&content, "<h1>Tagged: ")
-	write_html_escaped(&content, tag)
-	strings.write_string(&content, "</h1>\n")
+	strings.write_string(&b, "<h1>Tagged: ")
+	write_html_escaped(&b, tag)
+	strings.write_string(&b, "</h1>\n")
 
 	if len(articles) > 0 {
-		strings.write_string(&content, "<h2>Articles</h2>\n<ul class=\"article-list\">\n")
+		strings.write_string(&b, "<h2>Articles</h2>\n<ul class=\"article-list\">\n")
 		for article in articles {
-			write_content_list_item(&content, article, "../articles/", show_description = false)
+			write_content_list_item(&b, article, "../articles/", show_description = false)
 		}
-		strings.write_string(&content, "</ul>\n")
+		strings.write_string(&b, "</ul>\n")
 	}
 
 	if len(projects) > 0 {
-		strings.write_string(&content, "<h2>Projects</h2>\n<ul class=\"article-list\">\n")
+		strings.write_string(&b, "<h2>Projects</h2>\n<ul class=\"article-list\">\n")
 		for project in projects {
-			write_content_list_item(&content, project, "../projects/", show_description = false)
+			write_content_list_item(&b, project, "../projects/", show_description = false)
 		}
-		strings.write_string(&content, "</ul>\n")
+		strings.write_string(&b, "</ul>\n")
 	}
 
-	render_page(&b, config, tag, "articles.html", "../", strings.to_string(content))
+	render_page_footer(&b, config, "../")
 	return strings.to_string(b)
 }
 
 render_tags_index_page :: proc(config: Site_Config, tag_counts: []Tag_Count, allocator := context.allocator) -> string {
 	b := strings.builder_make(allocator)
-	content := strings.builder_make(allocator)
+	render_page_header(&b, config, "Tags", "articles.html", "../", page_path = "tags/index.html")
 
-	strings.write_string(&content, "<h1>Tags</h1>\n<ul class=\"tag-list\">\n")
+	strings.write_string(&b, "<h1>Tags</h1>\n<ul class=\"tag-list\">\n")
 	for tc in tag_counts {
-		strings.write_string(&content, `<li><a class="tag" href="`)
-		strings.write_string(&content, slugify(tc.name, allocator))
-		strings.write_string(&content, `.html">`)
-		write_html_escaped(&content, tc.name)
-		fmt.sbprintf(&content, `</a> <span class="count">(%d)</span></li>`, tc.count)
-		strings.write_string(&content, "\n")
+		strings.write_string(&b, `<li><a class="tag" href="`)
+		strings.write_string(&b, slugify(tc.name, allocator))
+		strings.write_string(&b, `.html">`)
+		write_html_escaped(&b, tc.name)
+		fmt.sbprintf(&b, `</a> <span class="count">(%d)</span></li>`, tc.count)
+		strings.write_string(&b, "\n")
 	}
-	strings.write_string(&content, "</ul>\n")
+	strings.write_string(&b, "</ul>\n")
 
-	render_page(&b, config, "Tags", "articles.html", "../", strings.to_string(content), page_path = "tags/index.html")
+	render_page_footer(&b, config, "../")
 	return strings.to_string(b)
 }
 
@@ -457,7 +458,9 @@ render_tags_index_page :: proc(config: Site_Config, tag_counts: []Tag_Count, all
 
 render_404_page :: proc(config: Site_Config, allocator := context.allocator) -> string {
 	b := strings.builder_make(allocator)
-	render_page(&b, config, "Not Found", "", "", "<h1>404</h1>\n<p>Page not found. <a href=\"index.html\">Go home</a>.</p>\n")
+	render_page_header(&b, config, "Not Found", "", "")
+	strings.write_string(&b, "<h1>404</h1>\n<p>Page not found. <a href=\"index.html\">Go home</a>.</p>\n")
+	render_page_footer(&b, config, "")
 	return strings.to_string(b)
 }
 
@@ -467,6 +470,8 @@ render_404_page :: proc(config: Site_Config, allocator := context.allocator) -> 
 
 render_about_page :: proc(config: Site_Config, about_html: string, allocator := context.allocator) -> string {
 	b := strings.builder_make(allocator)
-	render_page(&b, config, "About", "about.html", "", about_html, page_path = "about.html")
+	render_page_header(&b, config, "About", "about.html", "", page_path = "about.html")
+	strings.write_string(&b, about_html)
+	render_page_footer(&b, config, "")
 	return strings.to_string(b)
 }

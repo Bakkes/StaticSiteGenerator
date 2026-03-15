@@ -7,6 +7,8 @@ import "core:time"
 // RSS 2.0 Feed
 // ---------------------------------------------------------------------------
 
+RSS_MAX_ITEMS :: 20
+
 render_rss_feed :: proc(config: Site_Config, articles: []Article, projects: []Project, allocator := context.allocator) -> string {
 	b := strings.builder_make(allocator)
 
@@ -27,10 +29,10 @@ render_rss_feed :: proc(config: Site_Config, articles: []Article, projects: []Pr
 	strings.write_string(&b, format_rss_now(allocator))
 	strings.write_string(&b, "</lastBuildDate>\n")
 
-	for article in articles {
+	for article in articles[:min(len(articles), RSS_MAX_ITEMS)] {
 		write_rss_item(&b, config, article, "articles", allocator)
 	}
-	for project in projects {
+	for project in projects[:min(len(projects), RSS_MAX_ITEMS)] {
 		write_rss_item(&b, config, project, "projects", allocator)
 	}
 

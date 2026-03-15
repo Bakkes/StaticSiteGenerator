@@ -49,8 +49,8 @@ write_file :: proc(path: string, content: string) -> bool {
 	return true
 }
 
-write_output :: proc(output_dir: string, path: string, content: string, count: ^int) {
-	full_path := strings.concatenate({output_dir, "/", path})
+write_output :: proc(output_dir: string, path: string, content: string, count: ^int, allocator := context.allocator) {
+	full_path := strings.concatenate({output_dir, "/", path}, allocator)
 	if write_file(full_path, content) {
 		count^ += 1
 	}
@@ -126,14 +126,14 @@ main :: proc() {
 	ensure_dir(strings.concatenate({config.output_dir, "/projects"}))
 
 	// Load and parse articles
-	articles := load_content(Article, config, "articles")
-	slice.sort_by(articles[:], proc(a, b: Article) -> bool {
+	articles := load_content(config, "articles")
+	slice.sort_by(articles[:], proc(a, b: Content_Item) -> bool {
 		return a.frontmatter.date > b.frontmatter.date
 	})
 
 	// Load and parse projects
-	projects := load_content(Project, config, "projects")
-	slice.sort_by(projects[:], proc(a, b: Project) -> bool {
+	projects := load_content(config, "projects")
+	slice.sort_by(projects[:], proc(a, b: Content_Item) -> bool {
 		return a.frontmatter.priority > b.frontmatter.priority
 	})
 
@@ -143,14 +143,16 @@ main :: proc() {
 		fmt.eprintln("Error: failed to read home.md")
 		return
 	}
-	home_html := render_html(parse_markdown(home_source))
+	home_doc := parse_markdown(home_source)
+	home_html := render_html(home_doc, extract_headings(home_doc)[:])
 
 	about_source, about_ok := read_file(strings.concatenate({config.content_dir, "/about.md"}))
 	if !about_ok {
 		fmt.eprintln("Error: failed to read about.md")
 		return
 	}
-	about_html := render_html(parse_markdown(about_source))
+	about_doc := parse_markdown(about_source)
+	about_html := render_html(about_doc, extract_headings(about_doc)[:])
 
 	// Generate and write output
 	files_written := 0
@@ -160,14 +162,14 @@ main :: proc() {
 	write_output(config.output_dir, "projects.html", render_listing_page(config, "Projects", "projects.html", projects[:], "projects"), &files_written)
 	write_output(config.output_dir, "about.html", render_about_page(config, about_html), &files_written)
 
-	for &article, idx in articles {
-		prev: ^Content_Item = &articles[idx - 1] if idx > 0 else nil
-		next: ^Content_Item = &articles[idx + 1] if idx + 1 < len(articles) else nil
+	for article, idx in articles {
+		newer: ^Content_Item = &articles[idx - 1] if idx > 0 else nil
+		older: ^Content_Item = &articles[idx + 1] if idx + 1 < len(articles) else nil
 		path := strings.concatenate({"articles/", article.slug, ".html"})
-		write_output(config.output_dir, path, render_content_page(config, article, "articles", prev, next, articles[:]), &files_written)
+		write_output(config.output_dir, path, render_content_page(config, article, "articles", newer, older, articles[:]), &files_written)
 	}
 
-	for &project in projects {
+	for project in projects {
 		path := strings.concatenate({"projects/", project.slug, ".html"})
 		write_output(config.output_dir, path, render_content_page(config, project, "projects"), &files_written)
 	}
@@ -204,7 +206,7 @@ main :: proc() {
 	files_written += static_copied
 
 	build_ms := time.duration_milliseconds(time.since(build_start))
-	total_bytes := (len(arena.used_blocks) + 1) * arena.block_size + len(arena.out_band_allocations) * arena.out_band_size
+	total_bytes := (len(arena.used_blocks) + 1) * arena.block_size
 	fmt.printfln("Built %d files (%d articles, %d projects) in %.1fms | ~%dKB memory", files_written, len(articles), len(projects), build_ms, total_bytes / 1024)
 
 	// Validate output — exit non-zero on failure so CI stops before deploy
@@ -217,8 +219,8 @@ main :: proc() {
 // Content Loading
 // ---------------------------------------------------------------------------
 
-load_content :: proc($T: typeid, config: Site_Config, subdir: string, allocator := context.allocator) -> [dynamic]T {
-	items := make([dynamic]T, allocator)
+load_content :: proc(config: Site_Config, subdir: string, allocator := context.allocator) -> [dynamic]Content_Item {
+	items := make([dynamic]Content_Item, allocator)
 	dir := strings.concatenate({config.content_dir, "/", subdir}, allocator)
 
 	entries, err := os.read_all_directory_by_path(dir, allocator)
@@ -237,19 +239,19 @@ load_content :: proc($T: typeid, config: Site_Config, subdir: string, allocator 
 			continue
 		}
 
-		fm_text, body := split_frontmatter(source, allocator)
+		fm_text, body := split_frontmatter(source)
 		frontmatter := parse_frontmatter(fm_text, allocator)
 		slug := strings.trim_suffix(entry.name, ".md")
 
 		doc := parse_markdown(body, allocator)
-		body_html := render_html(doc, allocator)
 		headings := extract_headings(doc, allocator)
+		body_html := render_html(doc, headings[:], allocator)
 
 		if frontmatter.draft {
 			continue
 		}
 
-		append(&items, T{
+		append(&items, Content_Item{
 			frontmatter = frontmatter,
 			slug        = slug,
 			source_path = entry.fullpath,

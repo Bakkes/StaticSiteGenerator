@@ -39,17 +39,17 @@ heading_level :: proc(line: string) -> int {
 }
 
 starts_with_fence :: proc(line: string) -> bool {
-	trimmed := strings.trim_left_space(line)
-	s := scanner_make(trimmed)
-	return scanner_check_prefix(&s, "```")
+	return strings.has_prefix(strings.trim_left_space(line), "```")
+}
+
+is_closing_fence :: proc(line: string) -> bool {
+	return strings.trim_space(line) == "```"
 }
 
 fence_language :: proc(line: string) -> string {
 	trimmed := strings.trim_left_space(line)
-	s := scanner_make(trimmed)
-	is_backtick :: proc(c: byte) -> bool { return c == '`' }
-	scanner_capture_while(&s, is_backtick)
-	return strings.trim_space(scanner_rest(&s))
+	after_ticks := strings.trim_left(trimmed, "`")
+	return strings.trim_space(after_ticks)
 }
 
 is_unordered_item :: proc(line: string) -> (content: string, ok: bool) {
@@ -72,6 +72,17 @@ is_ordered_item :: proc(line: string) -> (content: string, ok: bool) {
 		return scanner_rest(&s), true
 	}
 	return "", false
+}
+
+is_block_start :: proc(line: string) -> bool {
+	if starts_with_fence(line) { return true }
+	if heading_level(line) > 0 { return true }
+	if is_hr_line(line) { return true }
+	if _, ok := is_unordered_item(line); ok { return true }
+	if _, ok := is_ordered_item(line); ok { return true }
+	if _, ok := is_blockquote_line(line); ok { return true }
+	if _, _, ok := is_sidenote_def_line(line); ok { return true }
+	return false
 }
 
 is_blockquote_line :: proc(line: string) -> (content: string, ok: bool) {
@@ -264,7 +275,7 @@ parse_markdown :: proc(source: string, allocator := context.allocator) -> Docume
 			code_start := i + 1
 			code_end := code_start
 			for code_end < len(lines) {
-				if starts_with_fence(lines[code_end]) {
+				if is_closing_fence(lines[code_end]) {
 					break
 				}
 				code_end += 1
@@ -332,16 +343,8 @@ parse_markdown :: proc(source: string, allocator := context.allocator) -> Docume
 		{
 			para_parts := make([dynamic]string, allocator)
 			defer delete(para_parts)
-			for i < len(lines) && !is_blank_line(lines[i]) {
-				l := lines[i]
-				if starts_with_fence(l) {break}
-				if heading_level(l) > 0 {break}
-				if is_hr_line(l) {break}
-				if _, ok := is_unordered_item(l); ok {break}
-				if _, ok := is_ordered_item(l); ok {break}
-				if _, ok := is_blockquote_line(l); ok {break}
-				if _, _, ok := is_sidenote_def_line(l); ok {break}
-				append(&para_parts, l)
+			for i < len(lines) && !is_blank_line(lines[i]) && !is_block_start(lines[i]) {
+				append(&para_parts, lines[i])
 				i += 1
 			}
 			if len(para_parts) > 0 {

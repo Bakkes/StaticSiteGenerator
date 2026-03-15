@@ -51,7 +51,7 @@ validate_dir :: proc(dir: string, root: string, ok: ^bool, allocator := context.
 		display_path := strings.trim_prefix(entry.fullpath, root)
 		display_path = strings.trim_left(display_path, "/")
 
-		gz_size := zlib_compressed_size(data, allocator) + GZIP_OVERHEAD
+		gz_size := zlib_compressed_size(data) + GZIP_OVERHEAD
 
 		if gz_size > MAX_GZIP_SIZE {
 			fmt.printfln("  FAIL  %s  (%d bytes gz, limit %d)", display_path, gz_size, MAX_GZIP_SIZE)
@@ -62,13 +62,13 @@ validate_dir :: proc(dir: string, root: string, ok: ^bool, allocator := context.
 	}
 }
 
-zlib_compressed_size :: proc(data: []u8, allocator := context.allocator) -> int {
+zlib_compressed_size :: proc(data: []u8) -> int {
 	if len(data) == 0 {
 		return 0
 	}
 
 	bound := zlib.compressBound(cast(zlib.uLong)len(data))
-	buf := make([]u8, bound, allocator)
+	buf := make([]u8, bound, context.temp_allocator)
 	dest_len := cast(zlib.uLong)bound
 
 	ret := zlib.compress(raw_data(buf), &dest_len, raw_data(data), cast(zlib.uLong)len(data))

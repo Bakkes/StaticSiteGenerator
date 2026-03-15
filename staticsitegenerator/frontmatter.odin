@@ -1,28 +1,47 @@
 package main
 
-import "core:strings"
+import "core:fmt"
 import "core:strconv"
+import "core:strings"
 import "core:time"
 
 // Split a markdown file into frontmatter text and body text.
 // Frontmatter is delimited by --- lines at the top of the file.
-split_frontmatter :: proc(source: string, allocator := context.allocator) -> (fm_text: string, body: string) {
-	lines := strings.split_lines(source, allocator)
-	if len(lines) == 0 || strings.trim_space(lines[0]) != "---" {
+// Returns slices into source — no allocations.
+split_frontmatter :: proc(source: string) -> (fm_text: string, body: string) {
+	first_nl := strings.index_byte(source, '\n')
+	if first_nl < 0 || strings.trim_space(source[:first_nl]) != "---" {
 		return "", source
 	}
 
-	// Find closing ---
-	for i in 1 ..< len(lines) {
-		if strings.trim_space(lines[i]) == "---" {
-			fm := strings.join(lines[1:i], "\n", allocator)
-			body_lines := lines[i + 1:]
-			b := strings.join(body_lines, "\n", allocator)
-			return fm, b
+	// Search for closing --- line
+	rest := source[first_nl + 1:]
+	offset := 0
+	for offset < len(rest) {
+		nl := strings.index_byte(rest[offset:], '\n')
+		end := offset + nl if nl >= 0 else len(rest)
+		if strings.trim_space(rest[offset:end]) == "---" {
+			fm_text = rest[:offset]
+			if len(fm_text) > 0 && fm_text[len(fm_text) - 1] == '\n' {
+				fm_text = fm_text[:len(fm_text) - 1]
+			}
+			body = rest[end + 1:] if end < len(rest) else ""
+			return
 		}
+		if nl < 0 { break }
+		offset = end + 1
 	}
 
 	return "", source
+}
+
+// Split a "key: value" YAML line into key and value strings.
+split_yaml_line :: proc(line: string) -> (key, value: string, ok: bool) {
+	colon := strings.index_byte(line, ':')
+	if colon < 0 {
+		return "", "", false
+	}
+	return strings.trim_space(line[:colon]), strings.trim_space(line[colon + 1:]), true
 }
 
 // Parse simple YAML-style key: value pairs from frontmatter text.
@@ -37,12 +56,10 @@ parse_frontmatter :: proc(fm_text: string, allocator := context.allocator) -> Fr
 
 	lines := strings.split_lines(fm_text, allocator)
 	for line in lines {
-		colon := strings.index_byte(line, ':')
-		if colon < 0 {
+		key, value, ok := split_yaml_line(line)
+		if !ok {
 			continue
 		}
-		key := strings.trim_space(line[:colon])
-		value := strings.trim_space(line[colon + 1:])
 
 		switch key {
 		case "title":
@@ -94,6 +111,16 @@ parse_tags :: proc(value: string, allocator := context.allocator) -> [dynamic]st
 	return tags
 }
 
+// Parse "label|url" into two trimmed strings.
+parse_pipe_pair :: proc(value: string) -> (left: string, right: string, ok: bool) {
+	pipe := strings.index_byte(value, '|')
+	if pipe < 0 { return "", "", false }
+	left = strings.trim_space(value[:pipe])
+	right = strings.trim_space(value[pipe + 1:])
+	ok = len(left) > 0 && len(right) > 0
+	return
+}
+
 // Parse site.yaml into Site_Config. Same simple key: value format as frontmatter.
 load_site_config :: proc(path: string, allocator := context.allocator) -> (Site_Config, bool) {
 	source, ok := read_file(path, allocator)
@@ -107,12 +134,10 @@ load_site_config :: proc(path: string, allocator := context.allocator) -> (Site_
 	}
 	lines := strings.split_lines(source, allocator)
 	for line in lines {
-		colon := strings.index_byte(line, ':')
-		if colon < 0 {
+		key, value, ok := split_yaml_line(line)
+		if !ok {
 			continue
 		}
-		key := strings.trim_space(line[:colon])
-		value := strings.trim_space(line[colon + 1:])
 
 		switch key {
 		case "title":
@@ -132,22 +157,12 @@ load_site_config :: proc(path: string, allocator := context.allocator) -> (Site_
 		case "content_dir":
 			config.content_dir = value
 		case "footer_link":
-			pipe := strings.index_byte(value, '|')
-			if pipe >= 0 {
-				text := strings.trim_space(value[:pipe])
-				url := strings.trim_space(value[pipe + 1:])
-				if len(text) > 0 && len(url) > 0 {
-					append(&config.footer_links, Footer_Link{text = text, url = url})
-				}
+			if text, url, ok := parse_pipe_pair(value); ok {
+				append(&config.footer_links, Footer_Link{text = text, url = url})
 			}
 		case "nav_item":
-			pipe := strings.index_byte(value, '|')
-			if pipe >= 0 {
-				label := strings.trim_space(value[:pipe])
-				href := strings.trim_space(value[pipe + 1:])
-				if len(label) > 0 && len(href) > 0 {
-					append(&config.nav_items, Nav_Item{label = label, href = href})
-				}
+			if label, href, ok := parse_pipe_pair(value); ok {
+				append(&config.nav_items, Nav_Item{label = label, href = href})
 			}
 		}
 	}
@@ -187,27 +202,9 @@ format_rss_time :: proc(t: time.Time, allocator := context.allocator) -> string 
 	day_names := [7]string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"}
 	month_names := [12]string{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
 
-	b := strings.builder_make(allocator)
-	buf: [20]byte
-	strings.write_string(&b, day_names[wd])
-	strings.write_string(&b, ", ")
-	if day < 10 { strings.write_byte(&b, '0') }
-	strings.write_string(&b, strconv.write_int(buf[:], i64(day), 10))
-	strings.write_byte(&b, ' ')
-	strings.write_string(&b, month_names[int(month) - 1])
-	strings.write_byte(&b, ' ')
-	strings.write_string(&b, strconv.write_int(buf[:], i64(year), 10))
-	strings.write_byte(&b, ' ')
-	if hour < 10 { strings.write_byte(&b, '0') }
-	strings.write_string(&b, strconv.write_int(buf[:], i64(hour), 10))
-	strings.write_byte(&b, ':')
-	if min < 10 { strings.write_byte(&b, '0') }
-	strings.write_string(&b, strconv.write_int(buf[:], i64(min), 10))
-	strings.write_byte(&b, ':')
-	if sec < 10 { strings.write_byte(&b, '0') }
-	strings.write_string(&b, strconv.write_int(buf[:], i64(sec), 10))
-	strings.write_string(&b, " +0000")
-	return strings.to_string(b)
+	return fmt.aprintf("%s, %02d %s %04d %02d:%02d:%02d +0000",
+		day_names[wd], day, month_names[int(month) - 1], year, hour, min, sec,
+		allocator = allocator)
 }
 
 // Format "YYYY-MM-DD" as RFC 822 for RSS.

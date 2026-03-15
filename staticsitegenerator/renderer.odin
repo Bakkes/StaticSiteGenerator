@@ -52,26 +52,31 @@ slugify :: proc(s: string, allocator := context.allocator) -> string {
 	return strings.to_string(b)
 }
 
-// Extract plain text from inlines (for heading text / slugs).
-inlines_to_text :: proc(inlines: []Inline, allocator := context.allocator) -> string {
-	b := strings.builder_make(allocator)
+// Write plain text from inlines into a builder (for heading text / slugs).
+inlines_to_text_builder :: proc(b: ^strings.Builder, inlines: []Inline) {
 	for inl in inlines {
 		switch v in inl {
 		case Text:
-			strings.write_string(&b, v.text)
+			strings.write_string(b, v.text)
 		case Bold:
-			strings.write_string(&b, inlines_to_text(v.children[:], allocator))
+			inlines_to_text_builder(b, v.children[:])
 		case Italic:
-			strings.write_string(&b, inlines_to_text(v.children[:], allocator))
+			inlines_to_text_builder(b, v.children[:])
 		case Code_Span:
-			strings.write_string(&b, v.text)
+			strings.write_string(b, v.text)
 		case Link:
-			strings.write_string(&b, v.text)
+			strings.write_string(b, v.text)
 		case Image:
-			strings.write_string(&b, v.alt)
+			strings.write_string(b, v.alt)
 		case Sidenote_Ref:
 		}
 	}
+}
+
+// Extract plain text from inlines as a string.
+inlines_to_text :: proc(inlines: []Inline, allocator := context.allocator) -> string {
+	b := strings.builder_make(allocator)
+	inlines_to_text_builder(&b, inlines)
 	return strings.to_string(b)
 }
 
@@ -93,7 +98,15 @@ extract_headings :: proc(doc: Document, allocator := context.allocator) -> [dyna
 
 Sidenote_Defs :: map[string][dynamic]Inline
 
-render_html :: proc(doc: Document, allocator := context.allocator) -> string {
+Render_State :: struct {
+	b:          ^strings.Builder,
+	sn_defs:    Sidenote_Defs,
+	sn_counter: int,
+	headings:   []Heading_Info,
+	h_counter:  int,
+}
+
+render_html :: proc(doc: Document, headings: []Heading_Info, allocator := context.allocator) -> string {
 	// Collect sidenote definitions
 	sn_defs := make(Sidenote_Defs, allocator = context.temp_allocator)
 	for block in doc.blocks {
@@ -102,117 +115,116 @@ render_html :: proc(doc: Document, allocator := context.allocator) -> string {
 		}
 	}
 
-	headings := extract_headings(doc, allocator)
-
 	b := strings.builder_make(allocator)
-	sn_counter := 0
-	h_counter := 0
-	render_blocks(&b, doc.blocks[:], &sn_defs, &sn_counter, headings[:], &h_counter)
+	rs := Render_State {
+		b        = &b,
+		sn_defs  = sn_defs,
+		headings = headings,
+	}
+	render_blocks(&rs, doc.blocks[:])
 	return strings.to_string(b)
 }
 
-render_blocks :: proc(b: ^strings.Builder, blocks: []Block, sn_defs: ^Sidenote_Defs, sn_counter: ^int, headings: []Heading_Info, h_counter: ^int) {
+render_blocks :: proc(rs: ^Render_State, blocks: []Block) {
 	for block in blocks {
 		switch v in block {
 		case Heading:
 			id := ""
-			if v.level <= 3 && h_counter^ < len(headings) {
-				id = headings[h_counter^].id
-				h_counter^ += 1
+			if v.level <= 3 && rs.h_counter < len(rs.headings) {
+				id = rs.headings[rs.h_counter].id
+				rs.h_counter += 1
 			}
 			if len(id) > 0 {
-				fmt.sbprintf(b, `<h%d id="%s">`, v.level, id)
+				fmt.sbprintf(rs.b, `<h%d id="%s">`, v.level, id)
 			} else {
-				fmt.sbprintf(b, "<h%d>", v.level)
+				fmt.sbprintf(rs.b, "<h%d>", v.level)
 			}
-			render_inlines(b, v.inlines[:], sn_defs, sn_counter)
+			render_inlines(rs, v.inlines[:])
 			if len(id) > 0 {
-				fmt.sbprintf(b, ` <a href="#%s" class="anchor">#</a>`, id)
+				fmt.sbprintf(rs.b, ` <a href="#%s" class="anchor">#</a>`, id)
 			}
-			fmt.sbprintf(b, "</h%d>\n", v.level)
+			fmt.sbprintf(rs.b, "</h%d>\n", v.level)
 		case Paragraph:
-			strings.write_string(b, "<p>")
-			render_inlines(b, v.inlines[:], sn_defs, sn_counter)
-			strings.write_string(b, "</p>\n")
+			strings.write_string(rs.b, "<p>")
+			render_inlines(rs, v.inlines[:])
+			strings.write_string(rs.b, "</p>\n")
 		case Code_Block:
 			if len(v.language) > 0 {
-				strings.write_string(b, "<pre><code class=\"language-")
-				write_html_escaped(b, v.language)
-				strings.write_string(b, "\">")
+				strings.write_string(rs.b, "<pre><code class=\"language-")
+				write_html_escaped(rs.b, v.language)
+				strings.write_string(rs.b, "\">")
 			} else {
-				strings.write_string(b, "<pre><code>")
+				strings.write_string(rs.b, "<pre><code>")
 			}
-			highlight_code(b, v.language, v.code)
-			strings.write_string(b, "</code></pre>\n")
+			highlight_code(rs.b, v.language, v.code)
+			strings.write_string(rs.b, "</code></pre>\n")
 		case List:
-			strings.write_string(b, "<ol>\n" if v.ordered else "<ul>\n")
+			strings.write_string(rs.b, "<ol>\n" if v.ordered else "<ul>\n")
 			for item in v.items {
-				strings.write_string(b, "<li>")
-				render_inlines(b, item[:], sn_defs, sn_counter)
-				strings.write_string(b, "</li>\n")
+				strings.write_string(rs.b, "<li>")
+				render_inlines(rs, item[:])
+				strings.write_string(rs.b, "</li>\n")
 			}
-			strings.write_string(b, "</ol>\n" if v.ordered else "</ul>\n")
+			strings.write_string(rs.b, "</ol>\n" if v.ordered else "</ul>\n")
 		case Blockquote:
-			strings.write_string(b, "<blockquote><p>")
-			render_inlines(b, v.inlines[:], sn_defs, sn_counter)
-			strings.write_string(b, "</p></blockquote>\n")
+			strings.write_string(rs.b, "<blockquote><p>")
+			render_inlines(rs, v.inlines[:])
+			strings.write_string(rs.b, "</p></blockquote>\n")
 		case Horizontal_Rule:
-			strings.write_string(b, "<hr>\n")
+			strings.write_string(rs.b, "<hr>\n")
 		case Sidenote_Def:
 			// Consumed during pre-pass; not rendered as a block
 		}
 	}
 }
 
-render_inlines :: proc(b: ^strings.Builder, inlines: []Inline, sn_defs: ^Sidenote_Defs, sn_counter: ^int) {
+render_inlines :: proc(rs: ^Render_State, inlines: []Inline) {
 	for inl in inlines {
 		switch v in inl {
 		case Text:
-			write_html_escaped(b, v.text)
+			write_html_escaped(rs.b, v.text)
 		case Bold:
-			strings.write_string(b, "<strong>")
-			render_inlines(b, v.children[:], sn_defs, sn_counter)
-			strings.write_string(b, "</strong>")
+			strings.write_string(rs.b, "<strong>")
+			render_inlines(rs, v.children[:])
+			strings.write_string(rs.b, "</strong>")
 		case Italic:
-			strings.write_string(b, "<em>")
-			render_inlines(b, v.children[:], sn_defs, sn_counter)
-			strings.write_string(b, "</em>")
+			strings.write_string(rs.b, "<em>")
+			render_inlines(rs, v.children[:])
+			strings.write_string(rs.b, "</em>")
 		case Code_Span:
-			strings.write_string(b, "<code>")
-			write_html_escaped(b, v.text)
-			strings.write_string(b, "</code>")
+			strings.write_string(rs.b, "<code>")
+			write_html_escaped(rs.b, v.text)
+			strings.write_string(rs.b, "</code>")
 		case Link:
-			strings.write_string(b, "<a href=\"")
-			write_html_escaped(b, v.url)
-			strings.write_string(b, "\">")
-			write_html_escaped(b, v.text)
-			strings.write_string(b, "</a>")
+			strings.write_string(rs.b, "<a href=\"")
+			write_html_escaped(rs.b, v.url)
+			strings.write_string(rs.b, "\">")
+			write_html_escaped(rs.b, v.text)
+			strings.write_string(rs.b, "</a>")
 		case Image:
-			strings.write_string(b, "<figure><img src=\"")
-			write_html_escaped(b, v.url)
-			strings.write_string(b, "\" alt=\"")
-			write_html_escaped(b, v.alt)
-			strings.write_string(b, "\" loading=\"lazy\">")
+			strings.write_string(rs.b, "<figure><img src=\"")
+			write_html_escaped(rs.b, v.url)
+			strings.write_string(rs.b, "\" alt=\"")
+			write_html_escaped(rs.b, v.alt)
+			strings.write_string(rs.b, "\" loading=\"lazy\">")
 			if len(v.alt) > 0 {
-				strings.write_string(b, "<figcaption>")
-				write_html_escaped(b, v.alt)
-				strings.write_string(b, "</figcaption>")
+				strings.write_string(rs.b, "<figcaption>")
+				write_html_escaped(rs.b, v.alt)
+				strings.write_string(rs.b, "</figcaption>")
 			}
-			strings.write_string(b, "</figure>")
+			strings.write_string(rs.b, "</figure>")
 		case Sidenote_Ref:
-			sn_counter^ += 1
-			n := sn_counter^
+			rs.sn_counter += 1
+			n := rs.sn_counter
 			sn_inlines: []Inline
-			if sn_defs != nil {
-				if found, ok := sn_defs[v.label]; ok {
-					sn_inlines = found[:]
-				}
+			if found, ok := rs.sn_defs[v.label]; ok {
+				sn_inlines = found[:]
 			}
-			fmt.sbprintf(b, `<label for="sn-%d" class="sn-num">%d</label>`, n, n)
-			fmt.sbprintf(b, `<input type="checkbox" id="sn-%d" class="sn-check">`, n)
-			fmt.sbprintf(b, `<span class="sn"><span class="sn-num">%d</span> `, n)
-			render_inlines(b, sn_inlines, sn_defs, sn_counter)
-			strings.write_string(b, "</span>")
+			fmt.sbprintf(rs.b, `<label for="sn-%d" class="sn-num">%d</label>`, n, n)
+			fmt.sbprintf(rs.b, `<input type="checkbox" id="sn-%d" class="sn-check">`, n)
+			fmt.sbprintf(rs.b, `<span class="sn"><span class="sn-num">%d</span> `, n)
+			render_inlines(rs, sn_inlines)
+			strings.write_string(rs.b, "</span>")
 		}
 	}
 }
