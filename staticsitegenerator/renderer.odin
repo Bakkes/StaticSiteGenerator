@@ -90,29 +90,29 @@ extract_headings :: proc(doc: Document, allocator := context.allocator) -> [dyna
 }
 
 Sidenote_Defs :: struct {
-	labels: [dynamic]string,
-	texts:  [dynamic]string,
+	labels:  [dynamic]string,
+	inlines: [dynamic][dynamic]Inline,
 }
 
-sidenote_defs_lookup :: proc(defs: ^Sidenote_Defs, label: string) -> string {
+sidenote_defs_lookup :: proc(defs: ^Sidenote_Defs, label: string) -> []Inline {
 	for l, i in defs.labels {
 		if l == label {
-			return defs.texts[i]
+			return defs.inlines[i][:]
 		}
 	}
-	return ""
+	return nil
 }
 
 render_html :: proc(doc: Document, allocator := context.allocator) -> string {
 	// Collect sidenote definitions
 	sn_defs := Sidenote_Defs {
-		labels = make([dynamic]string, allocator),
-		texts  = make([dynamic]string, allocator),
+		labels  = make([dynamic]string, allocator),
+		inlines = make([dynamic][dynamic]Inline, allocator),
 	}
 	for block in doc.blocks {
 		if def, ok := block.(Sidenote_Def); ok {
 			append(&sn_defs.labels, def.label)
-			append(&sn_defs.texts, def.text)
+			append(&sn_defs.inlines, def.inlines)
 		}
 	}
 
@@ -215,11 +215,11 @@ render_inlines :: proc(b: ^strings.Builder, inlines: []Inline, sn_defs: ^Sidenot
 		case Sidenote_Ref:
 			sn_counter^ += 1
 			n := sn_counter^
-			sn_text := sidenote_defs_lookup(sn_defs, v.label)
+			sn_inlines := sidenote_defs_lookup(sn_defs, v.label)
 			fmt.sbprintf(b, `<label for="sn-%d" class="sn-num">%d</label>`, n, n)
 			fmt.sbprintf(b, `<input type="checkbox" id="sn-%d" class="sn-check">`, n)
 			fmt.sbprintf(b, `<span class="sn"><span class="sn-num">%d</span> `, n)
-			write_html_escaped(b, sn_text)
+			render_inlines(b, sn_inlines, sn_defs, sn_counter)
 			strings.write_string(b, "</span>")
 		}
 	}

@@ -88,8 +88,8 @@ Sidenote_Ref :: struct {
 }
 
 Sidenote_Def :: struct {
-	label: string,
-	text:  string,
+	label:   string,
+	inlines: [dynamic]Inline,
 }
 
 // ---------------------------------------------------------------------------

@@ -240,8 +240,8 @@ parse_markdown :: proc(source: string, allocator := context.allocator) -> Docume
 			if scanner_match_prefix(&ls, "[^") {
 				label, ok := scanner_capture_until(&ls, ']')
 				if ok && scanner_match_prefix(&ls, ": ") {
-					text := scanner_rest(&ls)
-					append(&doc.blocks, Block(Sidenote_Def{label = label, text = text}))
+					inlines := parse_inlines(scanner_rest(&ls), allocator)
+					append(&doc.blocks, Block(Sidenote_Def{label = label, inlines = inlines}))
 					i += 1
 					continue
 				}

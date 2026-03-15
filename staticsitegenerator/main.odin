@@ -181,6 +181,9 @@ main :: proc() {
 	tags := collect_tags(articles[:], projects[:])
 	if len(tags) > 0 {
 		ensure_dir(strings.concatenate({config.output_dir, "/tags"}))
+
+		// Build tag counts for the index page
+		tag_counts := make([dynamic]Tag_Count)
 		for tag in tags {
 			tag_articles := make([dynamic]Article)
 			tag_projects := make([dynamic]Project)
@@ -200,10 +203,23 @@ main :: proc() {
 					}
 				}
 			}
+			append(&tag_counts, Tag_Count{name = tag, count = len(tag_articles) + len(tag_projects)})
 			path := strings.concatenate({config.output_dir, "/tags/", slugify(tag), ".html"})
 			if write_file(path, render_tag_page(config, tag, tag_articles[:], tag_projects[:])) {
 				files_written += 1
 			}
+		}
+
+		// Sort by count descending
+		slice.sort_by(tag_counts[:], proc(a, b: Tag_Count) -> bool {
+			return a.count > b.count
+		})
+
+		if write_file(
+			strings.concatenate({config.output_dir, "/tags/index.html"}),
+			render_tags_index_page(config, tag_counts[:]),
+		) {
+			files_written += 1
 		}
 	}
 
@@ -359,6 +375,11 @@ collect_tags :: proc(articles: []Article, projects: []Project, allocator := cont
 		}
 	}
 	return tags
+}
+
+Tag_Count :: struct {
+	name:  string,
+	count: int,
 }
 
 tag_exists :: proc(tags: []string, tag: string) -> bool {

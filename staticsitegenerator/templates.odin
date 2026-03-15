@@ -1,5 +1,6 @@
 package main
 
+import "core:fmt"
 import "core:strings"
 
 // ---------------------------------------------------------------------------
@@ -499,6 +500,25 @@ render_tag_page :: proc(config: Site_Config, tag: string, articles: []Article, p
 	}
 
 	render_page(&b, config, tag, "articles.html", "../", strings.to_string(content))
+	return strings.to_string(b)
+}
+
+render_tags_index_page :: proc(config: Site_Config, tag_counts: []Tag_Count, allocator := context.allocator) -> string {
+	b := strings.builder_make(allocator)
+	content := strings.builder_make(allocator)
+
+	strings.write_string(&content, "<h1>Tags</h1>\n<ul class=\"tag-list\">\n")
+	for tc in tag_counts {
+		strings.write_string(&content, `<li><a class="tag" href="`)
+		strings.write_string(&content, slugify(tc.name, allocator))
+		strings.write_string(&content, `.html">`)
+		write_html_escaped(&content, tc.name)
+		fmt.sbprintf(&content, `</a> <span class="count">(%d)</span></li>`, tc.count)
+		strings.write_string(&content, "\n")
+	}
+	strings.write_string(&content, "</ul>\n")
+
+	render_page(&b, config, "Tags", "articles.html", "../", strings.to_string(content), page_path = "tags/index.html")
 	return strings.to_string(b)
 }
 
