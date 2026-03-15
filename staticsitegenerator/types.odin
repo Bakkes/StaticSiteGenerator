@@ -116,7 +116,7 @@ Heading_Info :: struct {
 	id:    string,
 }
 
-Article :: struct {
+Content_Item :: struct {
 	frontmatter: Frontmatter,
 	slug:        string,
 	source_path: string,
@@ -124,17 +124,8 @@ Article :: struct {
 	headings:    [dynamic]Heading_Info,
 }
 
-Project :: struct {
-	frontmatter: Frontmatter,
-	slug:        string,
-	source_path: string,
-	body_html:   string,
-	headings:    [dynamic]Heading_Info,
-}
-
-Page :: struct {
-	body_html: string,
-}
+Article :: Content_Item
+Project :: Content_Item
 
 Footer_Link :: struct {
 	text: string,

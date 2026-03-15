@@ -178,36 +178,43 @@ parse_date :: proc(date_str: string, allocator := context.allocator) -> (t: time
 	return time.components_to_time(i64(year), i64(month), i64(day), 0, 0, 0)
 }
 
-// Format date as RFC 822 for RSS: "Mon, 01 Dec 2025 00:00:00 +0000"
+// Format time.Time as RFC 822 for RSS: "Mon, 01 Dec 2025 12:34:56 +0000"
+format_rss_time :: proc(t: time.Time, allocator := context.allocator) -> string {
+	wd := time.weekday(t)
+	year, month, day := time.date(t)
+	hour, min, sec := time.clock_from_time(t)
+
+	day_names := [7]string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"}
+	month_names := [12]string{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
+
+	b := strings.builder_make(allocator)
+	buf: [20]byte
+	strings.write_string(&b, day_names[wd])
+	strings.write_string(&b, ", ")
+	if day < 10 { strings.write_byte(&b, '0') }
+	strings.write_string(&b, strconv.write_int(buf[:], i64(day), 10))
+	strings.write_byte(&b, ' ')
+	strings.write_string(&b, month_names[int(month) - 1])
+	strings.write_byte(&b, ' ')
+	strings.write_string(&b, strconv.write_int(buf[:], i64(year), 10))
+	strings.write_byte(&b, ' ')
+	if hour < 10 { strings.write_byte(&b, '0') }
+	strings.write_string(&b, strconv.write_int(buf[:], i64(hour), 10))
+	strings.write_byte(&b, ':')
+	if min < 10 { strings.write_byte(&b, '0') }
+	strings.write_string(&b, strconv.write_int(buf[:], i64(min), 10))
+	strings.write_byte(&b, ':')
+	if sec < 10 { strings.write_byte(&b, '0') }
+	strings.write_string(&b, strconv.write_int(buf[:], i64(sec), 10))
+	strings.write_string(&b, " +0000")
+	return strings.to_string(b)
+}
+
+// Format "YYYY-MM-DD" as RFC 822 for RSS.
 format_rss_date :: proc(date_str: string, allocator := context.allocator) -> string {
 	t, ok := parse_date(date_str, allocator)
 	if !ok {
 		return date_str
 	}
-
-	wd := time.weekday(t)
-	day_names := [7]string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"}
-	month_names := [12]string{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
-
-	parts := strings.split(date_str, "-", allocator)
-	year := parts[0]
-	month_num := parse_int_simple(parts[1])
-	day_num := parse_int_simple(parts[2])
-
-	b := strings.builder_make(allocator)
-	strings.write_string(&b, day_names[wd])
-	strings.write_string(&b, ", ")
-	if day_num < 10 {
-		strings.write_byte(&b, '0')
-	}
-	buf: [20]byte
-	day_str := strconv.write_int(buf[:], i64(day_num), 10)
-	strings.write_string(&b, day_str)
-	strings.write_byte(&b, ' ')
-	strings.write_string(&b, month_names[month_num - 1])
-	strings.write_byte(&b, ' ')
-	strings.write_string(&b, year)
-	strings.write_string(&b, " 00:00:00 +0000")
-
-	return strings.to_string(b)
+	return format_rss_time(t, allocator)
 }

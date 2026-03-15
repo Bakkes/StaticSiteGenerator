@@ -1,7 +1,11 @@
 package main
 
 import "core:fmt"
+import "core:slice"
 import "core:strings"
+
+HOME_MAX_ARTICLES :: 8
+HOME_MAX_PROJECTS :: 5
 
 // ---------------------------------------------------------------------------
 // HTML Page Shell
@@ -211,13 +215,9 @@ write_series_nav :: proc(b: ^strings.Builder, current: Article, all_articles: []
 	}
 
 	// Sort by series_part
-	for i in 1 ..< len(series_articles) {
-		j := i
-		for j > 0 && series_articles[j].frontmatter.series_part < series_articles[j - 1].frontmatter.series_part {
-			series_articles[j], series_articles[j - 1] = series_articles[j - 1], series_articles[j]
-			j -= 1
-		}
-	}
+	slice.sort_by(series_articles[:], proc(a, b: Article) -> bool {
+		return a.frontmatter.series_part < b.frontmatter.series_part
+	})
 
 	strings.write_string(b, "<nav class=\"series\">\n<strong>")
 	write_html_escaped(b, current.frontmatter.series)
@@ -266,6 +266,21 @@ write_description :: proc(b: ^strings.Builder, fm: Frontmatter) {
 	}
 }
 
+write_content_list_item :: proc(b: ^strings.Builder, item: Content_Item, href_prefix: string, show_description := true) {
+	strings.write_string(b, "<li><span class=\"date\">")
+	strings.write_string(b, item.frontmatter.date)
+	strings.write_string(b, "</span> <a href=\"")
+	strings.write_string(b, href_prefix)
+	strings.write_string(b, item.slug)
+	strings.write_string(b, ".html\">")
+	write_html_escaped(b, item.frontmatter.title)
+	strings.write_string(b, "</a>")
+	if show_description {
+		write_description(b, item.frontmatter)
+	}
+	strings.write_string(b, "</li>\n")
+}
+
 // ---------------------------------------------------------------------------
 // Home Page
 // ---------------------------------------------------------------------------
@@ -277,35 +292,19 @@ render_home_page :: proc(config: Site_Config, home_html: string, articles: []Art
 	// Home content
 	strings.write_string(&content, home_html)
 
-	// Recent articles (up to 8)
+	// Recent articles
 	strings.write_string(&content, "\n<h2>Articles</h2>\n<ul class=\"article-list\">\n")
-	for article in articles[:min(len(articles), 8)] {
-		strings.write_string(&content, "<li><span class=\"date\">")
-		strings.write_string(&content, article.frontmatter.date)
-		strings.write_string(&content, "</span> <a href=\"articles/")
-		strings.write_string(&content, article.slug)
-		strings.write_string(&content, ".html\">")
-		write_html_escaped(&content, article.frontmatter.title)
-		strings.write_string(&content, "</a>")
-		write_description(&content, article.frontmatter)
-		strings.write_string(&content, "</li>\n")
+	for article in articles[:min(len(articles), HOME_MAX_ARTICLES)] {
+		write_content_list_item(&content, article, "articles/")
 	}
 	strings.write_string(&content, "</ul>\n")
 	strings.write_string(&content, "<p><a href=\"articles.html\">All articles &rarr;</a></p>\n")
 
-	// Recent projects (up to 5)
+	// Recent projects
 	if len(projects) > 0 {
 		strings.write_string(&content, "\n<h2>Projects</h2>\n<ul class=\"article-list\">\n")
-		for project in projects[:min(len(projects), 5)] {
-			strings.write_string(&content, "<li><span class=\"date\">")
-			strings.write_string(&content, project.frontmatter.date)
-			strings.write_string(&content, "</span> <a href=\"projects/")
-			strings.write_string(&content, project.slug)
-			strings.write_string(&content, ".html\">")
-			write_html_escaped(&content, project.frontmatter.title)
-			strings.write_string(&content, "</a>")
-			write_description(&content, project.frontmatter)
-			strings.write_string(&content, "</li>\n")
+		for project in projects[:min(len(projects), HOME_MAX_PROJECTS)] {
+			write_content_list_item(&content, project, "projects/")
 		}
 		strings.write_string(&content, "</ul>\n")
 		strings.write_string(&content, "<p><a href=\"projects.html\">All projects &rarr;</a></p>\n")
@@ -325,15 +324,7 @@ render_articles_page :: proc(config: Site_Config, articles: []Article, allocator
 
 	strings.write_string(&content, "<h1>Articles</h1>\n<ul class=\"article-list\">\n")
 	for article in articles {
-		strings.write_string(&content, "<li><span class=\"date\">")
-		strings.write_string(&content, article.frontmatter.date)
-		strings.write_string(&content, "</span> <a href=\"articles/")
-		strings.write_string(&content, article.slug)
-		strings.write_string(&content, ".html\">")
-		write_html_escaped(&content, article.frontmatter.title)
-		strings.write_string(&content, "</a>")
-		write_description(&content, article.frontmatter)
-		strings.write_string(&content, "</li>\n")
+		write_content_list_item(&content, article, "articles/")
 	}
 	strings.write_string(&content, "</ul>\n")
 
@@ -412,15 +403,7 @@ render_projects_page :: proc(config: Site_Config, projects: []Project, allocator
 
 	strings.write_string(&content, "<h1>Projects</h1>\n<ul class=\"article-list\">\n")
 	for project in projects {
-		strings.write_string(&content, "<li><span class=\"date\">")
-		strings.write_string(&content, project.frontmatter.date)
-		strings.write_string(&content, "</span> <a href=\"projects/")
-		strings.write_string(&content, project.slug)
-		strings.write_string(&content, ".html\">")
-		write_html_escaped(&content, project.frontmatter.title)
-		strings.write_string(&content, "</a>")
-		write_description(&content, project.frontmatter)
-		strings.write_string(&content, "</li>\n")
+		write_content_list_item(&content, project, "projects/")
 	}
 	strings.write_string(&content, "</ul>\n")
 
@@ -476,13 +459,7 @@ render_tag_page :: proc(config: Site_Config, tag: string, articles: []Article, p
 	if len(articles) > 0 {
 		strings.write_string(&content, "<h2>Articles</h2>\n<ul class=\"article-list\">\n")
 		for article in articles {
-			strings.write_string(&content, "<li><span class=\"date\">")
-			strings.write_string(&content, article.frontmatter.date)
-			strings.write_string(&content, "</span> <a href=\"../articles/")
-			strings.write_string(&content, article.slug)
-			strings.write_string(&content, ".html\">")
-			write_html_escaped(&content, article.frontmatter.title)
-			strings.write_string(&content, "</a></li>\n")
+			write_content_list_item(&content, article, "../articles/", show_description = false)
 		}
 		strings.write_string(&content, "</ul>\n")
 	}
@@ -490,13 +467,7 @@ render_tag_page :: proc(config: Site_Config, tag: string, articles: []Article, p
 	if len(projects) > 0 {
 		strings.write_string(&content, "<h2>Projects</h2>\n<ul class=\"article-list\">\n")
 		for project in projects {
-			strings.write_string(&content, "<li><span class=\"date\">")
-			strings.write_string(&content, project.frontmatter.date)
-			strings.write_string(&content, "</span> <a href=\"../projects/")
-			strings.write_string(&content, project.slug)
-			strings.write_string(&content, ".html\">")
-			write_html_escaped(&content, project.frontmatter.title)
-			strings.write_string(&content, "</a></li>\n")
+			write_content_list_item(&content, project, "../projects/", show_description = false)
 		}
 		strings.write_string(&content, "</ul>\n")
 	}

@@ -20,6 +20,8 @@ write_html_escaped :: proc(b: ^strings.Builder, s: string) {
 			esc = "&amp;"
 		case '"':
 			esc = "&quot;"
+		case '\'':
+			esc = "&apos;"
 		case:
 			continue
 		}
@@ -132,8 +134,11 @@ render_blocks :: proc(b: ^strings.Builder, blocks: []Block, sn_defs: ^Sidenote_D
 	for block in blocks {
 		switch v in block {
 		case Heading:
-			id := headings[h_counter^].id if h_counter^ < len(headings) else ""
-			h_counter^ += 1
+			id := ""
+			if v.level <= 3 && h_counter^ < len(headings) {
+				id = headings[h_counter^].id
+				h_counter^ += 1
+			}
 			fmt.sbprintf(b, `<h%d id="%s">`, v.level, id)
 			render_inlines(b, v.inlines[:], sn_defs, sn_counter)
 			fmt.sbprintf(b, ` <a href="#%s" class="anchor">#</a>`, id)

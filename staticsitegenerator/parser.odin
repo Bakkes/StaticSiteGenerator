@@ -86,6 +86,21 @@ is_blockquote_line :: proc(line: string) -> (content: string, ok: bool) {
 	return "", false
 }
 
+is_sidenote_def_line :: proc(line: string) -> (label: string, rest: string, ok: bool) {
+	if len(line) < 5 {
+		return "", "", false
+	}
+	s := scanner_make(line)
+	if !scanner_match_prefix(&s, "[^") {
+		return "", "", false
+	}
+	lbl, found := scanner_capture_until(&s, ']')
+	if !found || !scanner_match_prefix(&s, ": ") {
+		return "", "", false
+	}
+	return lbl, scanner_rest(&s), true
+}
+
 // ---------------------------------------------------------------------------
 // Inline Parser
 // ---------------------------------------------------------------------------
@@ -235,17 +250,11 @@ parse_markdown :: proc(source: string, allocator := context.allocator) -> Docume
 		line := lines[i]
 
 		// Sidenote definition: [^label]: text
-		if len(line) >= 5 {
-			ls := scanner_make(line)
-			if scanner_match_prefix(&ls, "[^") {
-				label, ok := scanner_capture_until(&ls, ']')
-				if ok && scanner_match_prefix(&ls, ": ") {
-					inlines := parse_inlines(scanner_rest(&ls), allocator)
-					append(&doc.blocks, Block(Sidenote_Def{label = label, inlines = inlines}))
-					i += 1
-					continue
-				}
-			}
+		if label, rest, ok := is_sidenote_def_line(line); ok {
+			inlines := parse_inlines(rest, allocator)
+			append(&doc.blocks, Block(Sidenote_Def{label = label, inlines = inlines}))
+			i += 1
+			continue
 		}
 
 		if is_blank_line(line) {
@@ -344,15 +353,7 @@ parse_markdown :: proc(source: string, allocator := context.allocator) -> Docume
 				if _, ok := is_unordered_item(l); ok {break}
 				if _, ok := is_ordered_item(l); ok {break}
 				if _, ok := is_blockquote_line(l); ok {break}
-				if len(l) >= 5 {
-					ls := scanner_make(l)
-					if scanner_match_prefix(&ls, "[^") {
-						_, ok := scanner_capture_until(&ls, ']')
-						if ok && scanner_check_prefix(&ls, ": ") {
-							break
-						}
-					}
-				}
+				if _, _, ok := is_sidenote_def_line(l); ok {break}
 				append(&para_parts, l)
 				i += 1
 			}

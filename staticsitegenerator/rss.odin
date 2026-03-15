@@ -2,7 +2,6 @@ package main
 
 import "core:strings"
 import "core:time"
-import "core:strconv"
 
 // ---------------------------------------------------------------------------
 // RSS 2.0 Feed
@@ -15,95 +14,55 @@ render_rss_feed :: proc(config: Site_Config, articles: []Article, projects: []Pr
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
 <channel>
 <title>`)
-	write_xml_escaped(&b, config.site_title)
+	write_html_escaped(&b, config.site_title)
 	strings.write_string(&b, "</title>\n<link>")
-	write_xml_escaped(&b, config.site_url)
+	write_html_escaped(&b, config.site_url)
 	strings.write_string(&b, "</link>\n<description>")
-	write_xml_escaped(&b, config.description)
+	write_html_escaped(&b, config.description)
 	strings.write_string(&b, "</description>\n")
 	strings.write_string(&b, `<atom:link href="`)
-	write_xml_escaped(&b, config.site_url)
+	write_html_escaped(&b, config.site_url)
 	strings.write_string(&b, `/feed.xml" rel="self" type="application/rss+xml"/>`)
 	strings.write_string(&b, "\n<lastBuildDate>")
 	strings.write_string(&b, format_rss_now(allocator))
 	strings.write_string(&b, "</lastBuildDate>\n")
 
 	for article in articles {
-		strings.write_string(&b, "<item>\n<title>")
-		write_xml_escaped(&b, article.frontmatter.title)
-		strings.write_string(&b, "</title>\n<link>")
-		write_xml_escaped(&b, config.site_url)
-		strings.write_string(&b, "/articles/")
-		strings.write_string(&b, article.slug)
-		strings.write_string(&b, ".html</link>\n<guid>")
-		write_xml_escaped(&b, config.site_url)
-		strings.write_string(&b, "/articles/")
-		strings.write_string(&b, article.slug)
-		strings.write_string(&b, ".html</guid>\n<pubDate>")
-		strings.write_string(&b, format_rss_date(article.frontmatter.date, allocator))
-		strings.write_string(&b, "</pubDate>\n<description>")
-		desc := article.frontmatter.description if len(article.frontmatter.description) > 0 else article.frontmatter.title
-		write_xml_escaped(&b, desc)
-		strings.write_string(&b, "</description>\n</item>\n")
+		write_rss_item(&b, config, article, "articles", allocator)
 	}
-
 	for project in projects {
-		strings.write_string(&b, "<item>\n<title>")
-		write_xml_escaped(&b, project.frontmatter.title)
-		strings.write_string(&b, "</title>\n<link>")
-		write_xml_escaped(&b, config.site_url)
-		strings.write_string(&b, "/projects/")
-		strings.write_string(&b, project.slug)
-		strings.write_string(&b, ".html</link>\n<guid>")
-		write_xml_escaped(&b, config.site_url)
-		strings.write_string(&b, "/projects/")
-		strings.write_string(&b, project.slug)
-		strings.write_string(&b, ".html</guid>\n<pubDate>")
-		strings.write_string(&b, format_rss_date(project.frontmatter.date, allocator))
-		strings.write_string(&b, "</pubDate>\n<description>")
-		desc := project.frontmatter.description if len(project.frontmatter.description) > 0 else project.frontmatter.title
-		write_xml_escaped(&b, desc)
-		strings.write_string(&b, "</description>\n</item>\n")
+		write_rss_item(&b, config, project, "projects", allocator)
 	}
 
 	strings.write_string(&b, "</channel>\n</rss>\n")
 	return strings.to_string(b)
 }
 
+write_rss_item :: proc(b: ^strings.Builder, config: Site_Config, item: Content_Item, section: string, allocator := context.allocator) {
+	strings.write_string(b, "<item>\n<title>")
+	write_html_escaped(b, item.frontmatter.title)
+	strings.write_string(b, "</title>\n<link>")
+	write_html_escaped(b, config.site_url)
+	strings.write_string(b, "/")
+	strings.write_string(b, section)
+	strings.write_string(b, "/")
+	strings.write_string(b, item.slug)
+	strings.write_string(b, ".html</link>\n<guid>")
+	write_html_escaped(b, config.site_url)
+	strings.write_string(b, "/")
+	strings.write_string(b, section)
+	strings.write_string(b, "/")
+	strings.write_string(b, item.slug)
+	strings.write_string(b, ".html</guid>\n<pubDate>")
+	strings.write_string(b, format_rss_date(item.frontmatter.date, allocator))
+	strings.write_string(b, "</pubDate>\n<description>")
+	desc := item.frontmatter.description if len(item.frontmatter.description) > 0 else item.frontmatter.title
+	write_html_escaped(b, desc)
+	strings.write_string(b, "</description>\n</item>\n")
+}
+
 format_rss_now :: proc(allocator := context.allocator) -> string {
-	now := time.now()
-	wd := time.weekday(now)
-	year, month, day := time.date(now)
-	hour, min, sec := time.clock_from_time(now)
-
-	day_names := [7]string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"}
-	month_names := [12]string{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
-
-	b := strings.builder_make(allocator)
-	strings.write_string(&b, day_names[wd])
-	strings.write_string(&b, ", ")
-
-	buf: [20]byte
-	if day < 10 {
-		strings.write_byte(&b, '0')
-	}
-	strings.write_string(&b, strconv.write_int(buf[:], i64(day), 10))
-	strings.write_byte(&b, ' ')
-	strings.write_string(&b, month_names[int(month) - 1])
-	strings.write_byte(&b, ' ')
-	strings.write_string(&b, strconv.write_int(buf[:], i64(year), 10))
-	strings.write_byte(&b, ' ')
-	if hour < 10 { strings.write_byte(&b, '0') }
-	strings.write_string(&b, strconv.write_int(buf[:], i64(hour), 10))
-	strings.write_byte(&b, ':')
-	if min < 10 { strings.write_byte(&b, '0') }
-	strings.write_string(&b, strconv.write_int(buf[:], i64(min), 10))
-	strings.write_byte(&b, ':')
-	if sec < 10 { strings.write_byte(&b, '0') }
-	strings.write_string(&b, strconv.write_int(buf[:], i64(sec), 10))
-	strings.write_string(&b, " +0000")
-
-	return strings.to_string(b)
+	return format_rss_time(time.now(), allocator)
 }
 
 // ---------------------------------------------------------------------------
@@ -119,7 +78,7 @@ render_sitemap :: proc(config: Site_Config, articles: []Article, projects: []Pro
 
 	write_sitemap_url :: proc(b: ^strings.Builder, base: string, path: string, lastmod: string = "") {
 		strings.write_string(b, "<url><loc>")
-		write_xml_escaped(b, base)
+		write_html_escaped(b, base)
 		strings.write_string(b, "/")
 		strings.write_string(b, path)
 		strings.write_string(b, "</loc>")
@@ -155,33 +114,4 @@ render_sitemap :: proc(config: Site_Config, articles: []Article, projects: []Pro
 
 	strings.write_string(&b, "</urlset>\n")
 	return strings.to_string(b)
-}
-
-write_xml_escaped :: proc(b: ^strings.Builder, s: string) {
-	start := 0
-	for i in 0 ..< len(s) {
-		esc: string
-		switch s[i] {
-		case '<':
-			esc = "&lt;"
-		case '>':
-			esc = "&gt;"
-		case '&':
-			esc = "&amp;"
-		case '"':
-			esc = "&quot;"
-		case '\'':
-			esc = "&apos;"
-		case:
-			continue
-		}
-		if i > start {
-			strings.write_string(b, s[start:i])
-		}
-		strings.write_string(b, esc)
-		start = i + 1
-	}
-	if start < len(s) {
-		strings.write_string(b, s[start:])
-	}
 }

@@ -314,14 +314,14 @@ collect_tags :: proc(articles: []Article, projects: []Project, allocator := cont
 	tags := make([dynamic]string, allocator)
 	for article in articles {
 		for tag in article.frontmatter.tags {
-			if !tag_exists(tags[:], tag) {
+			if !slice.contains(tags[:], tag) {
 				append(&tags, tag)
 			}
 		}
 	}
 	for project in projects {
 		for tag in project.frontmatter.tags {
-			if !tag_exists(tags[:], tag) {
+			if !slice.contains(tags[:], tag) {
 				append(&tags, tag)
 			}
 		}
@@ -332,15 +332,6 @@ collect_tags :: proc(articles: []Article, projects: []Project, allocator := cont
 Tag_Count :: struct {
 	name:  string,
 	count: int,
-}
-
-tag_exists :: proc(tags: []string, tag: string) -> bool {
-	for t in tags {
-		if t == tag {
-			return true
-		}
-	}
-	return false
 }
 
 // ---------------------------------------------------------------------------
@@ -374,7 +365,7 @@ copy_dir_recursive :: proc(src_dir: string, dst_dir: string, copied: ^int, alloc
 			if read_err != nil {
 				continue
 			}
-			write_err := os.write_entire_file_from_string(dst_path, string(data))
+			write_err := os.write_entire_file(dst_path, data)
 			if write_err == nil {
 				copied^ += 1
 			}
